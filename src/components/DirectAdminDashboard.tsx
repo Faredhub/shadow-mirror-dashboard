@@ -1,12 +1,10 @@
 
-import { useAuth } from '@/hooks/useAuth';
-import { Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { LogOut, Users, BookOpen, Calendar, Moon, Sun } from 'lucide-react';
+import { Home, Users, BookOpen, Calendar, BarChart3, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import {
   Table,
@@ -17,28 +15,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-const AdminDashboard = () => {
-  const { user, signOut } = useAuth();
+const DirectAdminDashboard = () => {
   const { theme, setTheme } = useTheme();
 
-  const { data: profile } = useQuery({
-    queryKey: ['profile', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return null;
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-      
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!user?.id,
-  });
-
-  // Real-time data fetching
-  const { data: allFaculty } = useQuery({
+  // Real-time data fetching with shorter refetch intervals
+  const { data: allFaculty, isLoading: facultyLoading } = useQuery({
     queryKey: ['all-faculty'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -50,11 +31,10 @@ const AdminDashboard = () => {
       if (error) throw error;
       return data || [];
     },
-    enabled: !!user,
     refetchInterval: 5000, // Real-time updates every 5 seconds
   });
 
-  const { data: allClassRecords } = useQuery({
+  const { data: allClassRecords, isLoading: recordsLoading } = useQuery({
     queryKey: ['all-class-records'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -69,11 +49,10 @@ const AdminDashboard = () => {
       if (error) throw error;
       return data || [];
     },
-    enabled: !!user,
     refetchInterval: 3000, // Real-time updates every 3 seconds
   });
 
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['admin-stats'],
     queryFn: async () => {
       const [facultyResult, coursesResult, sessionsResult] = await Promise.all([
@@ -88,16 +67,13 @@ const AdminDashboard = () => {
         sessions: sessionsResult.count || 0,
       };
     },
-    enabled: !!user,
     refetchInterval: 10000, // Real-time updates every 10 seconds
   });
 
-  if (!user) {
-    return <Navigate to="/auth" replace />;
-  }
-
-  if (profile?.role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
+  if (facultyLoading || recordsLoading || statsLoading) {
+    return <div className="min-h-screen flex items-center justify-center dark:bg-gray-900">
+      <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+    </div>;
   }
 
   return (
@@ -125,14 +101,16 @@ const AdminDashboard = () => {
                 {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
               <div className="text-sm text-gray-700 dark:text-gray-300">
-                Welcome, {profile?.full_name}
+                Direct Admin Access
                 <Badge variant="destructive" className="ml-2">
-                  {profile?.role}
+                  Administrator
                 </Badge>
               </div>
-              <Button variant="outline" size="sm" onClick={signOut}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Sign Out
+              <Button variant="outline" size="sm" asChild>
+                <a href="/">
+                  <Home className="h-4 w-4 mr-2" />
+                  Home
+                </a>
               </Button>
             </div>
           </div>
@@ -141,7 +119,7 @@ const AdminDashboard = () => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Cards */}
+        {/* Real-time Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card className="dark:bg-gray-800">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -150,7 +128,7 @@ const AdminDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold dark:text-white">{stats?.faculty || 0}</div>
-              <p className="text-xs text-muted-foreground">Live updates</p>
+              <p className="text-xs text-muted-foreground">Live count</p>
             </CardContent>
           </Card>
           
@@ -161,7 +139,7 @@ const AdminDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold dark:text-white">{stats?.courses || 0}</div>
-              <p className="text-xs text-muted-foreground">Live updates</p>
+              <p className="text-xs text-muted-foreground">Live count</p>
             </CardContent>
           </Card>
           
@@ -172,7 +150,7 @@ const AdminDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold dark:text-white">{stats?.sessions || 0}</div>
-              <p className="text-xs text-muted-foreground">Live updates</p>
+              <p className="text-xs text-muted-foreground">Live count</p>
             </CardContent>
           </Card>
         </div>
@@ -182,7 +160,7 @@ const AdminDashboard = () => {
           <CardHeader>
             <CardTitle className="dark:text-white">Faculty Management</CardTitle>
             <CardDescription className="dark:text-gray-300">
-              Real-time view and management of all faculty members
+              Real-time view of all faculty members (Updates every 5 seconds)
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -218,7 +196,7 @@ const AdminDashboard = () => {
           <CardHeader>
             <CardTitle className="dark:text-white">All Class Records</CardTitle>
             <CardDescription className="dark:text-gray-300">
-              Real-time view of all class records submitted by faculty
+              Real-time view of all class records (Updates every 3 seconds)
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -255,4 +233,4 @@ const AdminDashboard = () => {
   );
 };
 
-export default AdminDashboard;
+export default DirectAdminDashboard;
