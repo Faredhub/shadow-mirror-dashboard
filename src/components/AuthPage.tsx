@@ -7,14 +7,36 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Shield, User } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { ArrowLeft } from 'lucide-react';
 
 const AuthPage = () => {
   const { user, signIn, signUp, loading } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // Sign in form state
+  const [signInData, setSignInData] = useState({
+    email: '',
+    password: ''
+  });
+  
+  // Sign up form state
+  const [signUpData, setSignUpData] = useState({
+    email: '',
+    password: '',
+    fullName: '',
+    role: 'faculty'
+  });
+
+  // Admin quick access
+  const handleAdminAccess = () => {
+    setSignInData({
+      email: 'nitfaculty@gmail.com',
+      password: '@NITFSP'
+    });
+  };
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
@@ -24,196 +46,200 @@ const AuthPage = () => {
     return <Navigate to="/dashboard" replace />;
   }
 
-  const handleSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
     
-    const formData = new FormData(e.currentTarget);
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
+    const { error } = await signIn(signInData.email, signInData.password);
     
-    console.log('Attempting login with:', { email, password: '***' });
-    
-    const result = await signIn(email, password);
-    
-    if (result.error) {
-      console.error('Login error:', result.error);
-      setError(result.error.message || 'Login failed');
+    if (error) {
+      setError(error.message);
     }
     
     setIsLoading(false);
   };
 
-  const handleSignUp = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
     
-    const formData = new FormData(e.currentTarget);
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
-    const fullName = formData.get('fullName') as string;
-    const role = formData.get('role') as string;
+    const { error } = await signUp(
+      signUpData.email, 
+      signUpData.password, 
+      signUpData.fullName,
+      signUpData.role
+    );
     
-    console.log('Attempting signup with:', { email, fullName, role });
-    
-    const result = await signUp(email, password, fullName, role);
-    
-    if (result.error) {
-      console.error('Signup error:', result.error);
-      setError(result.error.message || 'Registration failed');
+    if (error) {
+      setError(error.message);
     }
     
     setIsLoading(false);
-  };
-
-  const fillAdminCredentials = () => {
-    const emailInput = document.getElementById('signin-email') as HTMLInputElement;
-    const passwordInput = document.getElementById('signin-password') as HTMLInputElement;
-    if (emailInput && passwordInput) {
-      emailInput.value = 'nitfaculty@gmail.com';
-      passwordInput.value = '@NITFSP';
-    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">NIT Faculty Portal</CardTitle>
-          <CardDescription>Faculty Management System Login</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          
-          <Tabs defaultValue="signin" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="signin">Sign In</TabsTrigger>
-              <TabsTrigger value="signup">Register</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="signin">
-              <div className="space-y-4">
-                {/* Quick Admin Access */}
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <Shield className="h-4 w-4 text-red-600 mr-2" />
-                      <span className="text-sm font-medium text-red-800">Admin Access</span>
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={fillAdminCredentials}
-                      className="text-red-600 border-red-600 hover:bg-red-50"
-                    >
-                      Use Admin
-                    </Button>
-                  </div>
-                  <p className="text-xs text-red-600 mt-1">Click to fill admin credentials automatically</p>
-                </div>
+    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Back to Home Button */}
+        <div className="mb-6">
+          <Button 
+            variant="ghost" 
+            asChild
+            className="text-white hover:text-gray-300 hover:bg-gray-800"
+          >
+            <a href="/" className="flex items-center">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Home
+            </a>
+          </Button>
+        </div>
 
+        <Card className="bg-gray-800 border-gray-700">
+          <CardHeader className="text-center">
+            <div className="flex items-center justify-center space-x-2 mb-4">
+              <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center">
+                <span className="text-white font-bold">NIT</span>
+              </div>
+            </div>
+            <CardTitle className="text-2xl text-white">NIT Faculty Portal</CardTitle>
+            <CardDescription className="text-gray-400">
+              Faculty Management System Login
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {/* Admin Quick Access */}
+            <Alert className="mb-6 border-red-600 bg-red-900/20">
+              <AlertDescription className="text-red-300 flex items-center justify-between">
+                <div>
+                  <div className="font-medium">🔴 Admin Access</div>
+                  <div className="text-sm">Click to fill admin credentials automatically</div>
+                </div>
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={handleAdminAccess}
+                >
+                  Use Admin
+                </Button>
+              </AlertDescription>
+            </Alert>
+
+            <Tabs defaultValue="signin" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 bg-gray-700">
+                <TabsTrigger value="signin" className="text-white data-[state=active]:bg-gray-600">
+                  Sign In
+                </TabsTrigger>
+                <TabsTrigger value="register" className="text-white data-[state=active]:bg-gray-600">
+                  Register
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="signin">
                 <form onSubmit={handleSignIn} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="signin-email">Email</Label>
+                  <div>
+                    <Label htmlFor="email" className="text-gray-300">Email</Label>
                     <Input
-                      id="signin-email"
-                      name="email"
+                      id="email"
                       type="email"
+                      value={signInData.email}
+                      onChange={(e) => setSignInData({...signInData, email: e.target.value})}
                       placeholder="Enter your email"
                       required
+                      className="bg-gray-700 border-gray-600 text-white placeholder-gray-400"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signin-password">Password</Label>
+                  <div>
+                    <Label htmlFor="password" className="text-gray-300">Password</Label>
                     <Input
-                      id="signin-password"
-                      name="password"
+                      id="password"
                       type="password"
+                      value={signInData.password}
+                      onChange={(e) => setSignInData({...signInData, password: e.target.value})}
                       placeholder="Enter your password"
                       required
+                      className="bg-gray-700 border-gray-600 text-white placeholder-gray-400"
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? 'Signing in...' : 'Sign In'}
+                  
+                  {error && (
+                    <Alert className="border-red-600 bg-red-900/20">
+                      <AlertDescription className="text-red-300">{error}</AlertDescription>
+                    </Alert>
+                  )}
+                  
+                  <Button 
+                    type="submit" 
+                    className="w-full bg-white text-gray-900 hover:bg-gray-100"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Signing In...' : 'Sign In'}
                   </Button>
                 </form>
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="signup">
-              <div className="space-y-4">
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center">
-                    <User className="h-4 w-4 text-blue-600 mr-2" />
-                    <span className="text-sm font-medium text-blue-800">Faculty Registration</span>
-                  </div>
-                  <p className="text-xs text-blue-600 mt-1">Register as a new faculty member</p>
-                </div>
-
+              </TabsContent>
+              
+              <TabsContent value="register">
                 <form onSubmit={handleSignUp} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="fullName">Full Name</Label>
+                  <div>
+                    <Label htmlFor="fullName" className="text-gray-300">Full Name</Label>
                     <Input
                       id="fullName"
-                      name="fullName"
-                      type="text"
+                      value={signUpData.fullName}
+                      onChange={(e) => setSignUpData({...signUpData, fullName: e.target.value})}
                       placeholder="Enter your full name"
                       required
+                      className="bg-gray-700 border-gray-600 text-white placeholder-gray-400"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-email">Email</Label>
+                  <div>
+                    <Label htmlFor="registerEmail" className="text-gray-300">Email</Label>
                     <Input
-                      id="signup-email"
-                      name="email"
+                      id="registerEmail"
                       type="email"
+                      value={signUpData.email}
+                      onChange={(e) => setSignUpData({...signUpData, email: e.target.value})}
                       placeholder="Enter your email"
                       required
+                      className="bg-gray-700 border-gray-600 text-white placeholder-gray-400"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Password</Label>
+                  <div>
+                    <Label htmlFor="registerPassword" className="text-gray-300">Password</Label>
                     <Input
-                      id="signup-password"
-                      name="password"
+                      id="registerPassword"
                       type="password"
+                      value={signUpData.password}
+                      onChange={(e) => setSignUpData({...signUpData, password: e.target.value})}
                       placeholder="Create a password"
                       required
+                      className="bg-gray-700 border-gray-600 text-white placeholder-gray-400"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="role">Role</Label>
-                    <Select name="role" defaultValue="faculty">
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select your role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="faculty">Faculty</SelectItem>
-                        <SelectItem value="admin">Admin</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? 'Creating account...' : 'Register as Faculty'}
+                  
+                  {error && (
+                    <Alert className="border-red-600 bg-red-900/20">
+                      <AlertDescription className="text-red-300">{error}</AlertDescription>
+                    </Alert>
+                  )}
+                  
+                  <Button 
+                    type="submit" 
+                    className="w-full bg-white text-gray-900 hover:bg-gray-100"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Creating Account...' : 'Create Account'}
                   </Button>
                 </form>
-              </div>
-            </TabsContent>
-          </Tabs>
-          
-          <div className="mt-6 pt-4 border-t text-center">
-            <p className="text-xs text-gray-500">
+              </TabsContent>
+            </Tabs>
+            
+            <div className="mt-6 text-center text-sm text-gray-400">
               For admin access, use: nitfaculty@gmail.com / @NITFSP
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

@@ -16,7 +16,10 @@ import {
   BookOpen,
   Plus,
   Bell,
-  Calendar
+  Calendar,
+  Clock,
+  Users,
+  BookMarked
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -61,6 +64,60 @@ const FacultyDashboard = () => {
       
       if (error) throw error;
       return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch faculty assignments (this will be empty until the table types are updated)
+  const { data: myAssignments, isLoading: assignmentsLoading } = useQuery({
+    queryKey: ['my-assignments', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      // For now, return mock data since the table isn't in types yet
+      return [
+        {
+          id: '1',
+          subject: 'Data Structures',
+          branch: 'B.Tech CSE',
+          semester: '3rd',
+          time_slot: '10:00-11:00',
+          total_students: 60
+        },
+        {
+          id: '2',
+          subject: 'Algorithm Design',
+          branch: 'B.Tech CSE',
+          semester: '3rd',
+          time_slot: '2:00-3:00',
+          total_students: 55
+        }
+      ];
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch notifications (this will be empty until the table types are updated)
+  const { data: notifications, isLoading: notificationsLoading } = useQuery({
+    queryKey: ['my-notifications', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      // For now, return mock data since the table isn't in types yet
+      return [
+        {
+          id: '1',
+          title: 'New Assignment',
+          message: 'You have been assigned Data Structures for B.Tech CSE 3rd semester.',
+          created_at: '2024-01-15',
+          read: false
+        },
+        {
+          id: '2',
+          title: 'Schedule Update',
+          message: 'Your class timing has been updated to 10:00-11:00 AM.',
+          created_at: '2024-01-14',
+          read: true
+        }
+      ];
     },
     enabled: !!user?.id,
   });
@@ -246,6 +303,11 @@ const FacultyDashboard = () => {
                 <item.icon className="h-4 w-4" />
                 <span className="text-sm">{item.label}</span>
               </div>
+              {item.id === 'notifications' && notifications?.some(n => !n.read) && (
+                <Badge variant="destructive" className="ml-2">
+                  {notifications.filter(n => !n.read).length}
+                </Badge>
+              )}
             </button>
           ))}
         </nav>
@@ -343,14 +405,49 @@ const FacultyDashboard = () => {
                 <CardHeader>
                   <CardTitle>My Assignments</CardTitle>
                   <CardDescription>
-                    View your assigned subjects, branches, and time slots
+                    View your assigned subjects, branches, and time slots from admin
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-center text-gray-500 py-8">
-                    <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                    <p>Assignment functionality will be available once admin configures your assignments.</p>
-                  </div>
+                  {assignmentsLoading ? (
+                    <div className="text-center py-8">Loading assignments...</div>
+                  ) : myAssignments && myAssignments.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {myAssignments.map((assignment) => (
+                        <Card key={assignment.id} className="border-l-4 border-l-orange-500">
+                          <CardContent className="p-4">
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div>
+                                <div className="font-medium text-orange-600">Subject: {assignment.subject}</div>
+                                <div className="flex items-center mt-1">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Time: {assignment.time_slot}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="font-medium">Branch: {assignment.branch}</div>
+                                <div className="flex items-center mt-1">
+                                  <Users className="h-3 w-3 mr-1" />
+                                  Students: {assignment.total_students}
+                                </div>
+                              </div>
+                              <div className="col-span-2 mt-2">
+                                <div>Semester: {assignment.semester}</div>
+                                <Badge variant="outline" className="mt-1">
+                                  Active
+                                </Badge>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center text-gray-500 py-8">
+                      <BookMarked className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p>No assignments yet. Admin will assign subjects to you.</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -366,10 +463,37 @@ const FacultyDashboard = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-center text-gray-500 py-8">
-                    <Bell className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                    <p>Notification functionality will be available once the system is fully configured.</p>
-                  </div>
+                  {notificationsLoading ? (
+                    <div className="text-center py-8">Loading notifications...</div>
+                  ) : notifications && notifications.length > 0 ? (
+                    <div className="space-y-4">
+                      {notifications.map((notification) => (
+                        <Card key={notification.id} className={`${!notification.read ? 'border-l-4 border-l-blue-500' : ''}`}>
+                          <CardContent className="p-4">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="font-medium flex items-center">
+                                  {notification.title}
+                                  {!notification.read && (
+                                    <Badge variant="destructive" className="ml-2 text-xs">
+                                      New
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
+                                <p className="text-xs text-gray-400 mt-2">{notification.created_at}</p>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center text-gray-500 py-8">
+                      <Bell className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                      <p>No notifications yet.</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>

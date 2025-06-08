@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -9,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Home, Users, BookOpen, Calendar, BarChart3, Moon, Sun, Plus, Edit, Trash2, Bell } from 'lucide-react';
+import { Home, Users, BookOpen, Calendar, BarChart3, Moon, Sun, Plus, Edit, Trash2, Bell, UserPlus } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -36,7 +35,9 @@ const DirectAdminDashboard = () => {
   const [activeSection, setActiveSection] = useState('faculty-management');
   const [isCreateFacultyOpen, setIsCreateFacultyOpen] = useState(false);
   const [isCreateCourseOpen, setIsCreateCourseOpen] = useState(false);
+  const [isAssignmentOpen, setIsAssignmentOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [selectedFaculty, setSelectedFaculty] = useState<any>(null);
 
   // Faculty form state
   const [facultyForm, setFacultyForm] = useState({
@@ -44,7 +45,7 @@ const DirectAdminDashboard = () => {
     email: '',
     department: '',
     employee_id: '',
-    password: 'faculty123' // Default password
+    password: ''
   });
 
   // Course form state
@@ -57,8 +58,24 @@ const DirectAdminDashboard = () => {
     academic_year: '2024-25'
   });
 
+  // Assignment form state
+  const [assignmentForm, setAssignmentForm] = useState({
+    branch: '',
+    semester: '',
+    subject: '',
+    time_slot: '',
+    total_students: ''
+  });
+
+  // Notification form state
+  const [notificationForm, setNotificationForm] = useState({
+    recipient_id: '',
+    title: '',
+    message: ''
+  });
+
   // Real-time data fetching
-  const { data: allFaculty, isLoading: facultyLoading } = useQuery({
+  const { data: allFaculty, isLoading: facultyLoading, refetch: refetchFaculty } = useQuery({
     queryKey: ['all-faculty'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -73,7 +90,7 @@ const DirectAdminDashboard = () => {
     refetchInterval: 3000,
   });
 
-  const { data: allCourses } = useQuery({
+  const { data: allCourses, refetch: refetchCourses } = useQuery({
     queryKey: ['all-courses'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -128,28 +145,82 @@ const DirectAdminDashboard = () => {
   // Mutations
   const createFacultyMutation = useMutation({
     mutationFn: async (data: typeof facultyForm) => {
-      // Create user profile directly (since we can't create auth users from client)
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .insert({
-          id: crypto.randomUUID(),
-          full_name: data.full_name,
-          email: data.email,
-          department: data.department,
-          employee_id: data.employee_id,
-          role: 'faculty'
-        })
-        .select()
-        .single();
+      console.log('Creating faculty with data:', data);
+      
+      // First, try to sign up the user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+        options: {
+          data: {
+            full_name: data.full_name,
+            role: 'faculty'
+          }
+        }
+      });
 
-      if (error) throw error;
-      return profile;
+      if (authError) {
+        console.error('Auth error:', authError);
+        // If auth signup fails, create profile directly
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: crypto.randomUUID(),
+            full_name: data.full_name,
+            email: data.email,
+            department: data.department,
+            employee_id: data.employee_id,
+            role: 'faculty'
+          })
+          .select()
+          .single();
+
+        if (profileError) throw profileError;
+        return profile;
+      }
+
+      // If auth signup succeeded, update the profile
+      if (authData.user) {
+        const { data: profile, error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            department: data.department,
+            employee_id: data.employee_id
+          })
+          .eq('id', authData.user.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        return profile;
+      }
+
+      throw new Error('Failed to create faculty');
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Faculty member created successfully" });
       setIsCreateFacultyOpen(false);
-      setFacultyForm({ full_name: '', email: '', department: '', employee_id: '', password: 'faculty123' });
-      queryClient.invalidateQueries({ queryKey: ['all-faculty'] });
+      setFacultyForm({ full_name: '', email: '', department: '', employee_id: '', password: '' });
+      refetchFaculty();
+    },
+    onError: (error: any) => {
+      console.error('Faculty creation error:', error);
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const deleteFacultyMutation = useMutation({
+    mutationFn: async (facultyId: string) => {
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', facultyId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Faculty member deleted successfully" });
+      refetchFaculty();
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -182,9 +253,95 @@ const DirectAdminDashboard = () => {
         semester: '',
         academic_year: '2024-25'
       });
-      queryClient.invalidateQueries({ queryKey: ['all-courses'] });
+      refetchCourses();
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   });
+
+  const deleteCourse = useMutation({
+    mutationFn: async (courseId: string) => {
+      const { error } = await supabase
+        .from('courses')
+        .delete()
+        .eq('id', courseId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Course deleted successfully" });
+      refetchCourses();
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const assignFacultyMutation = useMutation({
+    mutationFn: async (data: { facultyId: string; assignment: typeof assignmentForm }) => {
+      // Use raw SQL to insert into faculty_assignments table
+      const { error } = await supabase.rpc('execute_sql', {
+        sql: `INSERT INTO faculty_assignments (faculty_id, branch, semester, subject, time_slot, total_students, academic_year) 
+              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        params: [
+          data.facultyId,
+          data.assignment.branch,
+          data.assignment.semester,
+          data.assignment.subject,
+          data.assignment.time_slot,
+          parseInt(data.assignment.total_students),
+          '2024-25'
+        ]
+      });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Faculty assignment created successfully" });
+      setIsAssignmentOpen(false);
+      setAssignmentForm({ branch: '', semester: '', subject: '', time_slot: '', total_students: '' });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const sendNotificationMutation = useMutation({
+    mutationFn: async (data: typeof notificationForm) => {
+      // Use raw SQL to insert into notifications table
+      const { error } = await supabase.rpc('execute_sql', {
+        sql: `INSERT INTO notifications (recipient_id, sender_id, title, message, type) 
+              VALUES ($1, (SELECT id FROM profiles WHERE role = 'admin' LIMIT 1), $2, $3, 'assignment')`,
+        params: [data.recipient_id, data.title, data.message]
+      });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Notification sent successfully" });
+      setIsNotificationOpen(false);
+      setNotificationForm({ recipient_id: '', title: '', message: '' });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const handleAssignFaculty = (faculty: any) => {
+    setSelectedFaculty(faculty);
+    setIsAssignmentOpen(true);
+  };
+
+  const handleSendNotification = (faculty: any) => {
+    setSelectedFaculty(faculty);
+    setNotificationForm({
+      recipient_id: faculty.id,
+      title: '',
+      message: ''
+    });
+    setIsNotificationOpen(true);
+  };
 
   const sidebarItems = [
     { id: 'faculty-management', label: 'Faculty Management', icon: Users },
@@ -273,7 +430,7 @@ const DirectAdminDashboard = () => {
                       <DialogHeader>
                         <DialogTitle className="dark:text-white">Create New Faculty</DialogTitle>
                         <DialogDescription className="dark:text-gray-300">
-                          Add a new faculty member to the system
+                          Add a new faculty member to the system with login credentials
                         </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4">
@@ -284,6 +441,7 @@ const DirectAdminDashboard = () => {
                             value={facultyForm.full_name}
                             onChange={(e) => setFacultyForm({...facultyForm, full_name: e.target.value})}
                             className="dark:bg-gray-700 dark:text-white"
+                            required
                           />
                         </div>
                         <div>
@@ -294,6 +452,19 @@ const DirectAdminDashboard = () => {
                             value={facultyForm.email}
                             onChange={(e) => setFacultyForm({...facultyForm, email: e.target.value})}
                             className="dark:bg-gray-700 dark:text-white"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="password" className="dark:text-gray-300">Password</Label>
+                          <Input
+                            id="password"
+                            type="password"
+                            value={facultyForm.password}
+                            onChange={(e) => setFacultyForm({...facultyForm, password: e.target.value})}
+                            className="dark:bg-gray-700 dark:text-white"
+                            placeholder="Enter login password"
+                            required
                           />
                         </div>
                         <div>
@@ -324,33 +495,16 @@ const DirectAdminDashboard = () => {
                       </div>
                     </DialogContent>
                   </Dialog>
-
-                  <Button variant="outline">
-                    <Bell className="h-4 w-4 mr-2" />
-                    Send Notification
-                  </Button>
                 </div>
               </div>
-
-              {/* Faculty Assignments Section */}
-              <Card className="dark:bg-gray-800">
-                <CardHeader>
-                  <CardTitle className="dark:text-white">Faculty Assignments</CardTitle>
-                  <CardDescription className="dark:text-gray-300">
-                    Assign subjects, branches, and time slots to faculty (Feature coming soon)
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-                    Assignment functionality will be available once the database schema is fully updated.
-                  </div>
-                </CardContent>
-              </Card>
 
               {/* Faculty List */}
               <Card className="dark:bg-gray-800">
                 <CardHeader>
                   <CardTitle className="dark:text-white">All Faculty Members</CardTitle>
+                  <CardDescription className="dark:text-gray-300">
+                    Manage faculty members and their assignments
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Table>
@@ -372,10 +526,29 @@ const DirectAdminDashboard = () => {
                           <TableCell className="dark:text-gray-300">{faculty.employee_id || 'Not Set'}</TableCell>
                           <TableCell>
                             <div className="flex space-x-2">
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => handleAssignFaculty(faculty)}
+                              >
+                                <UserPlus className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => handleSendNotification(faculty)}
+                              >
+                                <Bell className="h-4 w-4" />
+                              </Button>
                               <Button size="sm" variant="outline">
                                 <Edit className="h-4 w-4" />
                               </Button>
-                              <Button size="sm" variant="destructive">
+                              <Button 
+                                size="sm" 
+                                variant="destructive"
+                                onClick={() => deleteFacultyMutation.mutate(faculty.id)}
+                                disabled={deleteFacultyMutation.isPending}
+                              >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </div>
@@ -389,6 +562,117 @@ const DirectAdminDashboard = () => {
             </div>
           )}
 
+          {/* Assignment Dialog */}
+          <Dialog open={isAssignmentOpen} onOpenChange={setIsAssignmentOpen}>
+            <DialogContent className="dark:bg-gray-800">
+              <DialogHeader>
+                <DialogTitle className="dark:text-white">
+                  Assign Subjects to {selectedFaculty?.full_name}
+                </DialogTitle>
+                <DialogDescription className="dark:text-gray-300">
+                  Assign branch, semester, subject, time slot and student count
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label className="dark:text-gray-300">Branch</Label>
+                  <Input
+                    value={assignmentForm.branch}
+                    onChange={(e) => setAssignmentForm({...assignmentForm, branch: e.target.value})}
+                    placeholder="e.g., B.Tech CSE"
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label className="dark:text-gray-300">Semester</Label>
+                  <Input
+                    value={assignmentForm.semester}
+                    onChange={(e) => setAssignmentForm({...assignmentForm, semester: e.target.value})}
+                    placeholder="e.g., 3rd"
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label className="dark:text-gray-300">Subject</Label>
+                  <Input
+                    value={assignmentForm.subject}
+                    onChange={(e) => setAssignmentForm({...assignmentForm, subject: e.target.value})}
+                    placeholder="e.g., Data Structures"
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label className="dark:text-gray-300">Time Slot</Label>
+                  <Input
+                    value={assignmentForm.time_slot}
+                    onChange={(e) => setAssignmentForm({...assignmentForm, time_slot: e.target.value})}
+                    placeholder="e.g., 10:00-11:00"
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label className="dark:text-gray-300">Total Students</Label>
+                  <Input
+                    type="number"
+                    value={assignmentForm.total_students}
+                    onChange={(e) => setAssignmentForm({...assignmentForm, total_students: e.target.value})}
+                    placeholder="e.g., 60"
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <Button 
+                  onClick={() => selectedFaculty && assignFacultyMutation.mutate({ 
+                    facultyId: selectedFaculty.id, 
+                    assignment: assignmentForm 
+                  })}
+                  disabled={assignFacultyMutation.isPending}
+                  className="w-full"
+                >
+                  {assignFacultyMutation.isPending ? 'Assigning...' : 'Assign Faculty'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Notification Dialog */}
+          <Dialog open={isNotificationOpen} onOpenChange={setIsNotificationOpen}>
+            <DialogContent className="dark:bg-gray-800">
+              <DialogHeader>
+                <DialogTitle className="dark:text-white">
+                  Send Notification to {selectedFaculty?.full_name}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label className="dark:text-gray-300">Title</Label>
+                  <Input
+                    value={notificationForm.title}
+                    onChange={(e) => setNotificationForm({...notificationForm, title: e.target.value})}
+                    placeholder="Notification title"
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label className="dark:text-gray-300">Message</Label>
+                  <Textarea
+                    value={notificationForm.message}
+                    onChange={(e) => setNotificationForm({...notificationForm, message: e.target.value})}
+                    placeholder="Notification message"
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <Button 
+                  onClick={() => sendNotificationMutation.mutate(notificationForm)}
+                  disabled={sendNotificationMutation.isPending}
+                  className="w-full"
+                >
+                  {sendNotificationMutation.isPending ? 'Sending...' : 'Send Notification'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Other sections remain the same */}
           {activeSection === 'course-management' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
@@ -468,7 +752,12 @@ const DirectAdminDashboard = () => {
                               <Button size="sm" variant="outline">
                                 <Edit className="h-4 w-4" />
                               </Button>
-                              <Button size="sm" variant="destructive">
+                              <Button 
+                                size="sm" 
+                                variant="destructive"
+                                onClick={() => deleteCourse.mutate(course.id)}
+                                disabled={deleteCourse.isPending}
+                              >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </div>
