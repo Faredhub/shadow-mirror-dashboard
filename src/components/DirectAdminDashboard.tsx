@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -280,20 +281,16 @@ const DirectAdminDashboard = () => {
 
   const assignFacultyMutation = useMutation({
     mutationFn: async (data: { facultyId: string; assignment: typeof assignmentForm }) => {
-      // Use raw SQL to insert into faculty_assignments table
-      const { error } = await supabase.rpc('execute_sql', {
-        sql: `INSERT INTO faculty_assignments (faculty_id, branch, semester, subject, time_slot, total_students, academic_year) 
-              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        params: [
-          data.facultyId,
-          data.assignment.branch,
-          data.assignment.semester,
-          data.assignment.subject,
-          data.assignment.time_slot,
-          parseInt(data.assignment.total_students),
-          '2024-25'
-        ]
-      });
+      // Store assignment details in work_activities table as a temporary solution
+      const { error } = await supabase
+        .from('work_activities')
+        .insert({
+          faculty_id: data.facultyId,
+          title: `Assignment: ${data.assignment.subject}`,
+          description: `Branch: ${data.assignment.branch}, Semester: ${data.assignment.semester}, Time Slot: ${data.assignment.time_slot}, Students: ${data.assignment.total_students}`,
+          activity_type: 'assignment',
+          status: 'assigned'
+        });
 
       if (error) throw error;
     },
@@ -309,12 +306,16 @@ const DirectAdminDashboard = () => {
 
   const sendNotificationMutation = useMutation({
     mutationFn: async (data: typeof notificationForm) => {
-      // Use raw SQL to insert into notifications table
-      const { error } = await supabase.rpc('execute_sql', {
-        sql: `INSERT INTO notifications (recipient_id, sender_id, title, message, type) 
-              VALUES ($1, (SELECT id FROM profiles WHERE role = 'admin' LIMIT 1), $2, $3, 'assignment')`,
-        params: [data.recipient_id, data.title, data.message]
-      });
+      // Store notification in work_activities table as a temporary solution
+      const { error } = await supabase
+        .from('work_activities')
+        .insert({
+          faculty_id: data.recipient_id,
+          title: `Notification: ${data.title}`,
+          description: data.message,
+          activity_type: 'notification',
+          status: 'sent'
+        });
 
       if (error) throw error;
     },
