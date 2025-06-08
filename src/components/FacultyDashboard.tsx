@@ -1,137 +1,147 @@
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { Navigate } from 'react-router-dom';
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
-  LogOut, 
-  User, 
-  FileText, 
-  Upload, 
-  Activity, 
-  BookOpen,
-  Plus,
-  Bell,
-  Calendar,
+  Home, 
+  Users, 
+  BookOpen, 
+  Calendar, 
+  BarChart3, 
+  Moon, 
+  Sun, 
+  Plus, 
+  LogOut,
   Clock,
-  Users,
-  BookMarked
+  CheckCircle,
+  Bell,
+  UserCheck,
+  BookmarkPlus
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { useTheme } from 'next-themes';
 import { useToast } from '@/hooks/use-toast';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 
 const FacultyDashboard = () => {
   const { user, signOut } = useAuth();
+  const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('dashboard');
-  
-  // Class Record Form State
-  const [classRecord, setClassRecord] = useState({
-    subject: '',
-    branch: '',
-    year: '',
-    semester: '',
-    time: '',
+  const [activeSection, setActiveSection] = useState('assignments');
+  const [isCreateWorkOpen, setIsCreateWorkOpen] = useState(false);
+  const [isCreateClassOpen, setIsCreateClassOpen] = useState(false);
+
+  // Work activity form state
+  const [workForm, setWorkForm] = useState({
+    title: '',
+    description: '',
+    activity_type: '',
+    hours_spent: 0,
+    start_date: '',
+    end_date: ''
+  });
+
+  // Class session form state
+  const [classForm, setClassForm] = useState({
+    course_id: '',
+    session_date: '',
+    start_time: '',
+    end_time: '',
     topic: '',
-    studentsPresent: '',
-    studentsAbsent: '',
-    totalStudents: ''
+    session_type: 'lecture',
+    location: ''
   });
 
-  // Activity Report Form State
-  const [activityReport, setActivityReport] = useState({
-    date: '',
-    timeSlot: '',
-    workDetails: '',
-    hours: ''
-  });
-
-  const { data: profile } = useQuery({
-    queryKey: ['profile', user?.id],
+  // Real-time data fetching for faculty assignments and notifications
+  const { data: assignments } = useQuery({
+    queryKey: ['faculty-assignments', user?.id],
     queryFn: async () => {
-      if (!user?.id) return null;
+      if (!user?.id) return [];
+      console.log('Fetching assignments for faculty:', user.id);
+      
       const { data, error } = await supabase
-        .from('profiles')
+        .from('work_activities')
         .select('*')
-        .eq('id', user.id)
-        .single();
+        .eq('faculty_id', user.id)
+        .eq('activity_type', 'assignment')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching assignments:', error);
+        throw error;
+      }
+      console.log('Assignments data:', data);
+      return data || [];
+    },
+    enabled: !!user?.id,
+    refetchInterval: 2000,
+  });
+
+  const { data: notifications } = useQuery({
+    queryKey: ['faculty-notifications', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      console.log('Fetching notifications for faculty:', user.id);
+      
+      const { data, error } = await supabase
+        .from('work_activities')
+        .select('*')
+        .eq('faculty_id', user.id)
+        .eq('activity_type', 'notification')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching notifications:', error);
+        throw error;
+      }
+      console.log('Notifications data:', data);
+      return data || [];
+    },
+    enabled: !!user?.id,
+    refetchInterval: 2000,
+  });
+
+  const { data: workActivities } = useQuery({
+    queryKey: ['faculty-work-activities', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      
+      const { data, error } = await supabase
+        .from('work_activities')
+        .select('*')
+        .eq('faculty_id', user.id)
+        .in('activity_type', ['teaching', 'research', 'admin', 'other'])
+        .order('created_at', { ascending: false });
       
       if (error) throw error;
-      return data;
+      return data || [];
     },
     enabled: !!user?.id,
+    refetchInterval: 3000,
   });
 
-  // Fetch faculty assignments (this will be empty until the table types are updated)
-  const { data: myAssignments, isLoading: assignmentsLoading } = useQuery({
-    queryKey: ['my-assignments', user?.id],
+  const { data: courses } = useQuery({
+    queryKey: ['faculty-courses', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
-      // For now, return mock data since the table isn't in types yet
-      return [
-        {
-          id: '1',
-          subject: 'Data Structures',
-          branch: 'B.Tech CSE',
-          semester: '3rd',
-          time_slot: '10:00-11:00',
-          total_students: 60
-        },
-        {
-          id: '2',
-          subject: 'Algorithm Design',
-          branch: 'B.Tech CSE',
-          semester: '3rd',
-          time_slot: '2:00-3:00',
-          total_students: 55
-        }
-      ];
-    },
-    enabled: !!user?.id,
-  });
-
-  // Fetch notifications (this will be empty until the table types are updated)
-  const { data: notifications, isLoading: notificationsLoading } = useQuery({
-    queryKey: ['my-notifications', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return [];
-      // For now, return mock data since the table isn't in types yet
-      return [
-        {
-          id: '1',
-          title: 'New Assignment',
-          message: 'You have been assigned Data Structures for B.Tech CSE 3rd semester.',
-          created_at: '2024-01-15',
-          read: false
-        },
-        {
-          id: '2',
-          title: 'Schedule Update',
-          message: 'Your class timing has been updated to 10:00-11:00 AM.',
-          created_at: '2024-01-14',
-          read: true
-        }
-      ];
-    },
-    enabled: !!user?.id,
-  });
-
-  const { data: classRecords } = useQuery({
-    queryKey: ['class-records', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return [];
+      
       const { data, error } = await supabase
-        .from('class_sessions')
-        .select(`
-          *,
-          courses (name, code)
-        `)
+        .from('courses')
+        .select('*')
         .eq('faculty_id', user.id)
         .order('created_at', { ascending: false });
       
@@ -139,154 +149,135 @@ const FacultyDashboard = () => {
       return data || [];
     },
     enabled: !!user?.id,
+    refetchInterval: 3000,
   });
 
-  const submitClassRecord = useMutation({
-    mutationFn: async (data: typeof classRecord) => {
-      if (!user?.id) throw new Error('User not authenticated');
+  const { data: classSessions } = useQuery({
+    queryKey: ['faculty-class-sessions', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
       
-      // First create or find the course
-      let courseId;
-      const { data: existingCourse } = await supabase
-        .from('courses')
-        .select('id')
-        .eq('code', `${data.subject}-${data.branch}`)
-        .single();
-
-      if (existingCourse) {
-        courseId = existingCourse.id;
-      } else {
-        const { data: newCourse, error: courseError } = await supabase
-          .from('courses')
-          .insert({
-            code: `${data.subject}-${data.branch}`,
-            name: data.subject,
-            faculty_id: user.id,
-            semester: data.semester,
-            academic_year: data.year
-          })
-          .select('id')
-          .single();
-
-        if (courseError) throw courseError;
-        courseId = newCourse.id;
-      }
-
-      // Create class session
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('class_sessions')
-        .insert({
-          course_id: courseId,
-          faculty_id: user.id,
-          session_date: new Date().toISOString().split('T')[0],
-          start_time: data.time,
-          end_time: data.time,
-          topic: data.topic,
-          session_type: 'lecture'
-        });
-
+        .select(`
+          *,
+          courses (name, code)
+        `)
+        .eq('faculty_id', user.id)
+        .order('session_date', { ascending: false });
+      
       if (error) throw error;
+      return data || [];
     },
-    onSuccess: () => {
-      toast({
-        title: "Success",
-        description: "Class record uploaded successfully",
-      });
-      setClassRecord({
-        subject: '',
-        branch: '',
-        year: '',
-        semester: '',
-        time: '',
-        topic: '',
-        studentsPresent: '',
-        studentsAbsent: '',
-        totalStudents: ''
-      });
-      queryClient.invalidateQueries({ queryKey: ['class-records'] });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
+    enabled: !!user?.id,
+    refetchInterval: 3000,
   });
 
-  const submitActivityReport = useMutation({
-    mutationFn: async (data: typeof activityReport) => {
+  // Mutations
+  const createWorkActivityMutation = useMutation({
+    mutationFn: async (data: typeof workForm) => {
       if (!user?.id) throw new Error('User not authenticated');
       
-      const { error } = await supabase
+      const { data: activity, error } = await supabase
         .from('work_activities')
         .insert({
           faculty_id: user.id,
-          title: `Work Activity - ${data.timeSlot}`,
-          description: data.workDetails,
-          activity_type: 'teaching',
-          start_date: data.date,
-          hours_spent: parseFloat(data.hours) || 0
-        });
+          title: data.title,
+          description: data.description,
+          activity_type: data.activity_type,
+          hours_spent: data.hours_spent,
+          start_date: data.start_date,
+          end_date: data.end_date,
+          status: 'completed'
+        })
+        .select()
+        .single();
 
       if (error) throw error;
+      return activity;
     },
     onSuccess: () => {
-      toast({
-        title: "Success",
-        description: "Activity report submitted successfully",
+      toast({ title: "Success", description: "Work activity created successfully" });
+      setIsCreateWorkOpen(false);
+      setWorkForm({
+        title: '',
+        description: '',
+        activity_type: '',
+        hours_spent: 0,
+        start_date: '',
+        end_date: ''
       });
-      setActivityReport({
-        date: '',
-        timeSlot: '',
-        workDetails: '',
-        hours: ''
-      });
+      queryClient.invalidateQueries({ queryKey: ['faculty-work-activities'] });
     },
     onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   });
 
-  if (!user) {
-    return <Navigate to="/auth" replace />;
-  }
+  const createClassSessionMutation = useMutation({
+    mutationFn: async (data: typeof classForm) => {
+      if (!user?.id) throw new Error('User not authenticated');
+      
+      const { data: session, error } = await supabase
+        .from('class_sessions')
+        .insert({
+          faculty_id: user.id,
+          course_id: data.course_id,
+          session_date: data.session_date,
+          start_time: data.start_time,
+          end_time: data.end_time,
+          topic: data.topic,
+          session_type: data.session_type,
+          location: data.location
+        })
+        .select()
+        .single();
 
-  const handleClassRecordSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    submitClassRecord.mutate(classRecord);
-  };
-
-  const handleActivityReportSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    submitActivityReport.mutate(activityReport);
-  };
+      if (error) throw error;
+      return session;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Class session created successfully" });
+      setIsCreateClassOpen(false);
+      setClassForm({
+        course_id: '',
+        session_date: '',
+        start_time: '',
+        end_time: '',
+        topic: '',
+        session_type: 'lecture',
+        location: ''
+      });
+      queryClient.invalidateQueries({ queryKey: ['faculty-class-sessions'] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  });
 
   const sidebarItems = [
-    { id: 'dashboard', label: 'Faculty Dashboard', icon: User },
-    { id: 'assignments', label: 'My Assignments', icon: Calendar },
+    { id: 'assignments', label: 'My Assignments', icon: BookmarkPlus },
     { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'activity-report', label: 'Activity Report', icon: Activity },
-    { id: 'class-report', label: 'Class Report', icon: FileText },
-    { id: 'update-profile', label: 'Update Profile', icon: User },
-    { id: 'view-last-record', label: 'View last record', icon: BookOpen },
-    { id: 'view-class-record', label: 'View class record', icon: BookOpen },
+    { id: 'work-activities', label: 'Work Activities', icon: BarChart3 },
+    { id: 'courses', label: 'My Courses', icon: BookOpen },
+    { id: 'class-sessions', label: 'Class Sessions', icon: Calendar },
+    { id: 'attendance', label: 'Attendance', icon: UserCheck },
   ];
 
+  if (!user) {
+    return <div className="flex items-center justify-center h-screen">Please log in to access the faculty dashboard.</div>;
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
       {/* Sidebar */}
-      <div className="w-64 bg-white shadow-lg">
-        <div className="p-4 border-b">
+      <div className="w-64 bg-white dark:bg-gray-800 shadow-lg">
+        <div className="p-4 border-b dark:border-gray-700">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center">
+            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
               <span className="text-white text-sm font-bold">NIT</span>
             </div>
-            <span className="font-semibold">Faculty Dashboard</span>
+            <span className="font-semibold dark:text-white">Faculty Portal</span>
           </div>
         </div>
         
@@ -294,18 +285,21 @@ const FacultyDashboard = () => {
           {sidebarItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full text-left px-4 py-3 flex items-center justify-between hover:bg-gray-100 ${
-                activeTab === item.id ? 'bg-blue-50 border-r-2 border-blue-500' : ''
+              onClick={() => setActiveSection(item.id)}
+              className={`w-full text-left px-4 py-3 flex items-center space-x-3 hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                activeSection === item.id ? 'bg-blue-50 dark:bg-blue-900 border-r-2 border-blue-500' : ''
               }`}
             >
-              <div className="flex items-center space-x-3">
-                <item.icon className="h-4 w-4" />
-                <span className="text-sm">{item.label}</span>
-              </div>
-              {item.id === 'notifications' && notifications?.some(n => !n.read) && (
-                <Badge variant="destructive" className="ml-2">
-                  {notifications.filter(n => !n.read).length}
+              <item.icon className="h-4 w-4 dark:text-gray-300" />
+              <span className="text-sm dark:text-gray-300">{item.label}</span>
+              {item.id === 'assignments' && assignments && assignments.length > 0 && (
+                <Badge variant="secondary" className="ml-auto">
+                  {assignments.length}
+                </Badge>
+              )}
+              {item.id === 'notifications' && notifications && notifications.length > 0 && (
+                <Badge variant="destructive" className="ml-auto">
+                  {notifications.length}
                 </Badge>
               )}
             </button>
@@ -316,21 +310,38 @@ const FacultyDashboard = () => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <header className="bg-white shadow-sm border-b">
+        <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700">
           <div className="px-6 py-4 flex justify-between items-center">
-            <h1 className="text-xl font-semibold">
-              {sidebarItems.find(item => item.id === activeTab)?.label || 'Faculty Dashboard'}
+            <h1 className="text-xl font-semibold dark:text-white">
+              {sidebarItems.find(item => item.id === activeSection)?.label || 'Faculty Dashboard'}
             </h1>
             <div className="flex items-center space-x-4">
-              <div className="text-sm text-gray-700">
-                Welcome, {profile?.full_name}
-                <Badge variant="secondary" className="ml-2">
-                  {profile?.role}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              >
+                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
+              <div className="text-sm text-gray-700 dark:text-gray-300">
+                Welcome, {user.email}
+                <Badge variant="outline" className="ml-2">
+                  Faculty
                 </Badge>
               </div>
-              <Button variant="outline" size="sm" onClick={signOut}>
+              <Button variant="outline" size="sm" asChild>
+                <a href="/">
+                  <Home className="h-4 w-4 mr-2" />
+                  Home
+                </a>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => signOut()}
+              >
                 <LogOut className="h-4 w-4 mr-2" />
-                Sign Out
+                Logout
               </Button>
             </div>
           </div>
@@ -338,459 +349,290 @@ const FacultyDashboard = () => {
 
         {/* Content Area */}
         <main className="flex-1 p-6">
-          {activeTab === 'dashboard' && (
+          {/* Assignments Section */}
+          {activeSection === 'assignments' && (
             <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Welcome to Faculty Dashboard</CardTitle>
-                  <CardDescription>
-                    Manage your classes, attendance, and activities
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-lg">Quick Actions</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-2">
-                        <Button 
-                          onClick={() => setActiveTab('class-report')}
-                          className="w-full justify-start"
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Upload Class Record
-                        </Button>
-                        <Button 
-                          onClick={() => setActiveTab('activity-report')}
-                          variant="outline"
-                          className="w-full justify-start"
-                        >
-                          <Activity className="h-4 w-4 mr-2" />
-                          Submit Activity Report
-                        </Button>
-                        <Button 
-                          onClick={() => setActiveTab('assignments')}
-                          variant="outline"
-                          className="w-full justify-start"
-                        >
-                          <Calendar className="h-4 w-4 mr-2" />
-                          View Assignments
-                        </Button>
-                      </CardContent>
-                    </Card>
-                    
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-lg">Recent Classes</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {classRecords?.slice(0, 3).map((record) => (
-                          <div key={record.id} className="text-sm text-gray-600 mb-2">
-                            <div className="font-medium">{record.topic}</div>
-                            <div>{record.session_date} - {record.start_time}</div>
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold dark:text-white">My Assignments</h2>
+              </div>
+
+              <div className="grid gap-4">
+                {assignments && assignments.length > 0 ? (
+                  assignments.map((assignment) => {
+                    // Parse the description to extract assignment details
+                    const description = assignment.description || '';
+                    const branch = description.match(/Branch: ([^,]+)/)?.[1] || 'N/A';
+                    const semester = description.match(/Semester: ([^,]+)/)?.[1] || 'N/A';
+                    const timeSlot = description.match(/Time Slot: ([^,]+)/)?.[1] || 'N/A';
+                    const students = description.match(/Students: ([^,]+)/)?.[1] || 'N/A';
+                    const subject = assignment.title.replace('Assignment: ', '') || 'N/A';
+
+                    return (
+                      <Card key={assignment.id} className="dark:bg-gray-800">
+                        <CardHeader>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <CardTitle className="dark:text-white">{subject}</CardTitle>
+                              <CardDescription className="dark:text-gray-300">
+                                Assigned on {new Date(assignment.created_at).toLocaleDateString()}
+                              </CardDescription>
+                            </div>
+                            <Badge variant={assignment.status === 'assigned' ? 'default' : 'secondary'}>
+                              {assignment.status}
+                            </Badge>
                           </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {activeTab === 'assignments' && (
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>My Assignments</CardTitle>
-                  <CardDescription>
-                    View your assigned subjects, branches, and time slots from admin
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {assignmentsLoading ? (
-                    <div className="text-center py-8">Loading assignments...</div>
-                  ) : myAssignments && myAssignments.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {myAssignments.map((assignment) => (
-                        <Card key={assignment.id} className="border-l-4 border-l-orange-500">
-                          <CardContent className="p-4">
-                            <div className="grid grid-cols-2 gap-2 text-sm">
-                              <div>
-                                <div className="font-medium text-orange-600">Subject: {assignment.subject}</div>
-                                <div className="flex items-center mt-1">
-                                  <Clock className="h-3 w-3 mr-1" />
-                                  Time: {assignment.time_slot}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="font-medium">Branch: {assignment.branch}</div>
-                                <div className="flex items-center mt-1">
-                                  <Users className="h-3 w-3 mr-1" />
-                                  Students: {assignment.total_students}
-                                </div>
-                              </div>
-                              <div className="col-span-2 mt-2">
-                                <div>Semester: {assignment.semester}</div>
-                                <Badge variant="outline" className="mt-1">
-                                  Active
-                                </Badge>
-                              </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className="font-medium dark:text-gray-300">Branch:</span>
+                              <span className="ml-2 dark:text-white">{branch}</span>
                             </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center text-gray-500 py-8">
-                      <BookMarked className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                      <p>No assignments yet. Admin will assign subjects to you.</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                            <div>
+                              <span className="font-medium dark:text-gray-300">Semester:</span>
+                              <span className="ml-2 dark:text-white">{semester}</span>
+                            </div>
+                            <div>
+                              <span className="font-medium dark:text-gray-300">Time Slot:</span>
+                              <span className="ml-2 dark:text-white">{timeSlot}</span>
+                            </div>
+                            <div>
+                              <span className="font-medium dark:text-gray-300">Total Students:</span>
+                              <span className="ml-2 dark:text-white">{students}</span>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })
+                ) : (
+                  <Card className="dark:bg-gray-800">
+                    <CardContent className="text-center py-8">
+                      <BookmarkPlus className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                      <p className="text-gray-500 dark:text-gray-400">No assignments yet</p>
+                      <p className="text-sm text-gray-400 dark:text-gray-500">
+                        Admin will assign subjects to you soon
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
             </div>
           )}
 
-          {activeTab === 'notifications' && (
+          {/* Notifications Section */}
+          {activeSection === 'notifications' && (
             <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Notifications</CardTitle>
-                  <CardDescription>
-                    Messages and notifications from administration
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {notificationsLoading ? (
-                    <div className="text-center py-8">Loading notifications...</div>
-                  ) : notifications && notifications.length > 0 ? (
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold dark:text-white">Notifications</h2>
+              </div>
+
+              <div className="space-y-4">
+                {notifications && notifications.length > 0 ? (
+                  notifications.map((notification) => {
+                    const title = notification.title.replace('Notification: ', '') || 'Notification';
+                    
+                    return (
+                      <Card key={notification.id} className="dark:bg-gray-800">
+                        <CardHeader>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <CardTitle className="dark:text-white flex items-center">
+                                <Bell className="h-4 w-4 mr-2" />
+                                {title}
+                              </CardTitle>
+                              <CardDescription className="dark:text-gray-300">
+                                Received on {new Date(notification.created_at).toLocaleDateString()}
+                              </CardDescription>
+                            </div>
+                            <Badge variant="outline">
+                              {notification.status}
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="dark:text-gray-300">{notification.description}</p>
+                        </CardContent>
+                      </Card>
+                    );
+                  })
+                ) : (
+                  <Card className="dark:bg-gray-800">
+                    <CardContent className="text-center py-8">
+                      <Bell className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                      <p className="text-gray-500 dark:text-gray-400">No notifications</p>
+                      <p className="text-sm text-gray-400 dark:text-gray-500">
+                        You'll receive notifications from admin here
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Work Activities Section */}
+          {activeSection === 'work-activities' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold dark:text-white">Work Activities</h2>
+                <Dialog open={isCreateWorkOpen} onOpenChange={setIsCreateWorkOpen}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Activity
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="dark:bg-gray-800">
+                    <DialogHeader>
+                      <DialogTitle className="dark:text-white">Create Work Activity</DialogTitle>
+                      <DialogDescription className="dark:text-gray-300">
+                        Record your teaching, research, or administrative activities
+                      </DialogDescription>
+                    </DialogHeader>
                     <div className="space-y-4">
-                      {notifications.map((notification) => (
-                        <Card key={notification.id} className={`${!notification.read ? 'border-l-4 border-l-blue-500' : ''}`}>
-                          <CardContent className="p-4">
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <div className="font-medium flex items-center">
-                                  {notification.title}
-                                  {!notification.read && (
-                                    <Badge variant="destructive" className="ml-2 text-xs">
-                                      New
-                                    </Badge>
-                                  )}
-                                </div>
-                                <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
-                                <p className="text-xs text-gray-400 mt-2">{notification.created_at}</p>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
+                      <div>
+                        <Label className="dark:text-gray-300">Title</Label>
+                        <Input
+                          value={workForm.title}
+                          onChange={(e) => setWorkForm({...workForm, title: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                          placeholder="Activity title"
+                        />
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Description</Label>
+                        <Textarea
+                          value={workForm.description}
+                          onChange={(e) => setWorkForm({...workForm, description: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                          placeholder="Activity description"
+                        />
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Activity Type</Label>
+                        <Select value={workForm.activity_type} onValueChange={(value) => setWorkForm({...workForm, activity_type: value})}>
+                          <SelectTrigger className="dark:bg-gray-700 dark:text-white">
+                            <SelectValue placeholder="Select activity type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="teaching">Teaching</SelectItem>
+                            <SelectItem value="research">Research</SelectItem>
+                            <SelectItem value="admin">Administrative</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Hours Spent</Label>
+                        <Input
+                          type="number"
+                          value={workForm.hours_spent}
+                          onChange={(e) => setWorkForm({...workForm, hours_spent: parseFloat(e.target.value)})}
+                          className="dark:bg-gray-700 dark:text-white"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label className="dark:text-gray-300">Start Date</Label>
+                          <Input
+                            type="date"
+                            value={workForm.start_date}
+                            onChange={(e) => setWorkForm({...workForm, start_date: e.target.value})}
+                            className="dark:bg-gray-700 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <Label className="dark:text-gray-300">End Date</Label>
+                          <Input
+                            type="date"
+                            value={workForm.end_date}
+                            onChange={(e) => setWorkForm({...workForm, end_date: e.target.value})}
+                            className="dark:bg-gray-700 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                      <Button 
+                        onClick={() => createWorkActivityMutation.mutate(workForm)}
+                        disabled={createWorkActivityMutation.isPending}
+                        className="w-full"
+                      >
+                        {createWorkActivityMutation.isPending ? 'Creating...' : 'Create Activity'}
+                      </Button>
                     </div>
-                  ) : (
-                    <div className="text-center text-gray-500 py-8">
-                      <Bell className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                      <p>No notifications yet.</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              <div className="grid gap-4">
+                {workActivities?.map((activity) => (
+                  <Card key={activity.id} className="dark:bg-gray-800">
+                    <CardHeader>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="dark:text-white">{activity.title}</CardTitle>
+                          <CardDescription className="dark:text-gray-300">
+                            {activity.activity_type} • {activity.hours_spent} hours
+                          </CardDescription>
+                        </div>
+                        <Badge variant="outline">
+                          {activity.status}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="dark:text-gray-300 mb-2">{activity.description}</p>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        {activity.start_date && (
+                          <span>From {activity.start_date}</span>
+                        )}
+                        {activity.end_date && (
+                          <span> to {activity.end_date}</span>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             </div>
           )}
 
-          {activeTab === 'class-report' && (
-            <Card>
+          {/* Other sections remain the same */}
+          {activeSection === 'courses' && (
+            <Card className="dark:bg-gray-800">
               <CardHeader>
-                <CardTitle>Upload Class Record</CardTitle>
-                <CardDescription>
-                  Enter details about your class session and student attendance
-                </CardDescription>
+                <CardTitle className="dark:text-white">My Courses</CardTitle>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleClassRecordSubmit} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="subject">Subject</Label>
-                      <Input
-                        id="subject"
-                        value={classRecord.subject}
-                        onChange={(e) => setClassRecord({...classRecord, subject: e.target.value})}
-                        placeholder="e.g., Data Structures"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="branch">Branch</Label>
-                      <Input
-                        id="branch"
-                        value={classRecord.branch}
-                        onChange={(e) => setClassRecord({...classRecord, branch: e.target.value})}
-                        placeholder="e.g., B.Tech CSE"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="year">Year</Label>
-                      <Input
-                        id="year"
-                        value={classRecord.year}
-                        onChange={(e) => setClassRecord({...classRecord, year: e.target.value})}
-                        placeholder="e.g., 2nd Year"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="semester">Semester</Label>
-                      <Input
-                        id="semester"
-                        value={classRecord.semester}
-                        onChange={(e) => setClassRecord({...classRecord, semester: e.target.value})}
-                        placeholder="e.g., 3rd"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="time">Time</Label>
-                      <Input
-                        id="time"
-                        type="time"
-                        value={classRecord.time}
-                        onChange={(e) => setClassRecord({...classRecord, time: e.target.value})}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="topic">Topic Covered</Label>
-                    <Textarea
-                      id="topic"
-                      value={classRecord.topic}
-                      onChange={(e) => setClassRecord({...classRecord, topic: e.target.value})}
-                      placeholder="Describe the topics covered in this class"
-                      required
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="present">No. of students present</Label>
-                      <Input
-                        id="present"
-                        type="number"
-                        value={classRecord.studentsPresent}
-                        onChange={(e) => setClassRecord({...classRecord, studentsPresent: e.target.value})}
-                        placeholder="25"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="absent">No. of students absent</Label>
-                      <Input
-                        id="absent"
-                        type="number"
-                        value={classRecord.studentsAbsent}
-                        onChange={(e) => setClassRecord({...classRecord, studentsAbsent: e.target.value})}
-                        placeholder="5"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="total">Total no. of students</Label>
-                      <Input
-                        id="total"
-                        type="number"
-                        value={classRecord.totalStudents}
-                        onChange={(e) => setClassRecord({...classRecord, totalStudents: e.target.value})}
-                        placeholder="30"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="document">Upload Document (Optional)</Label>
-                    <div className="mt-2 flex items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
-                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <Upload className="w-8 h-8 mb-4 text-gray-500" />
-                        <p className="mb-2 text-sm text-gray-500">
-                          <span className="font-semibold">Click to upload</span> or drag and drop
-                        </p>
-                        <p className="text-xs text-gray-500">PDF, DOC, or DOCX (MAX. 10MB)</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Button 
-                    type="submit" 
-                    className="w-full bg-red-600 hover:bg-red-700"
-                    disabled={submitClassRecord.isPending}
-                  >
-                    {submitClassRecord.isPending ? 'Submitting...' : 'SUBMIT'}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          )}
-
-          {activeTab === 'activity-report' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Activity Report</CardTitle>
-                <CardDescription>
-                  Report your work activities and hours
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleActivityReportSubmit} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="date">Date</Label>
-                      <Input
-                        id="date"
-                        type="date"
-                        value={activityReport.date}
-                        onChange={(e) => setActivityReport({...activityReport, date: e.target.value})}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="timeSlot">Time Slot</Label>
-                      <Input
-                        id="timeSlot"
-                        value={activityReport.timeSlot}
-                        onChange={(e) => setActivityReport({...activityReport, timeSlot: e.target.value})}
-                        placeholder="e.g., Morning (9 AM - 12 PM)"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="workDetails">Work Details</Label>
-                    <Textarea
-                      id="workDetails"
-                      value={activityReport.workDetails}
-                      onChange={(e) => setActivityReport({...activityReport, workDetails: e.target.value})}
-                      placeholder="Describe your work activities for this time slot"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="hours">Hours Spent</Label>
-                    <Input
-                      id="hours"
-                      type="number"
-                      step="0.5"
-                      value={activityReport.hours}
-                      onChange={(e) => setActivityReport({...activityReport, hours: e.target.value})}
-                      placeholder="3.5"
-                      required
-                    />
-                  </div>
-
-                  <Button 
-                    type="submit" 
-                    className="w-full"
-                    disabled={submitActivityReport.isPending}
-                  >
-                    {submitActivityReport.isPending ? 'Submitting...' : 'Submit Activity Report'}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          )}
-
-          {activeTab === 'view-class-record' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Class Records</CardTitle>
-                <CardDescription>
-                  View all your submitted class records
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {classRecords?.map((record) => (
-                    <Card key={record.id} className="p-4">
-                      <div className="grid grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <div className="font-medium text-orange-600">Subject: {record.courses?.name || 'N/A'}</div>
-                          <div>Time: {record.start_time}</div>
-                        </div>
-                        <div>
-                          <div className="font-medium">Branch: B.Tech</div>
-                          <div>Semester: 3rd</div>
-                        </div>
-                        <div>
-                          <div>Date: {record.session_date}</div>
-                          <div>Topic: {record.topic}</div>
-                        </div>
-                        <div className="text-right">
-                          <Badge variant="secondary">Active</Badge>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                  
-                  {(!classRecords || classRecords.length === 0) && (
-                    <div className="text-center text-gray-500 py-8">
-                      No class records found. Upload your first class record to get started.
-                    </div>
-                  )}
+                <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                  Course management coming soon
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {activeTab === 'update-profile' && (
-            <Card>
+          {activeSection === 'class-sessions' && (
+            <Card className="dark:bg-gray-800">
               <CardHeader>
-                <CardTitle>Update Profile</CardTitle>
-                <CardDescription>
-                  Update your personal information
-                </CardDescription>
+                <CardTitle className="dark:text-white">Class Sessions</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="fullName">Full Name</Label>
-                    <Input
-                      id="fullName"
-                      value={profile?.full_name || ''}
-                      readOnly
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      value={profile?.email || ''}
-                      readOnly
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="role">Role</Label>
-                    <Input
-                      id="role"
-                      value={profile?.role || ''}
-                      readOnly
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="department">Department</Label>
-                    <Input
-                      id="department"
-                      value={profile?.department || ''}
-                      placeholder="Enter your department"
-                    />
-                  </div>
-                  <Button>Update Profile</Button>
+                <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                  Class session management coming soon
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {activeSection === 'attendance' && (
+            <Card className="dark:bg-gray-800">
+              <CardHeader>
+                <CardTitle className="dark:text-white">Attendance Management</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                  Attendance management coming soon
                 </div>
               </CardContent>
             </Card>

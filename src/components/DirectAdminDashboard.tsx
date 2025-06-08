@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -35,10 +34,13 @@ const DirectAdminDashboard = () => {
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState('faculty-management');
   const [isCreateFacultyOpen, setIsCreateFacultyOpen] = useState(false);
+  const [isEditFacultyOpen, setIsEditFacultyOpen] = useState(false);
   const [isCreateCourseOpen, setIsCreateCourseOpen] = useState(false);
+  const [isEditCourseOpen, setIsEditCourseOpen] = useState(false);
   const [isAssignmentOpen, setIsAssignmentOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [selectedFaculty, setSelectedFaculty] = useState<any>(null);
+  const [selectedCourse, setSelectedCourse] = useState<any>(null);
 
   // Faculty form state
   const [facultyForm, setFacultyForm] = useState({
@@ -75,25 +77,31 @@ const DirectAdminDashboard = () => {
     message: ''
   });
 
-  // Real-time data fetching
-  const { data: allFaculty, isLoading: facultyLoading, refetch: refetchFaculty } = useQuery({
+  // Real-time data fetching with shorter intervals
+  const { data: allFaculty, isLoading: facultyLoading } = useQuery({
     queryKey: ['all-faculty'],
     queryFn: async () => {
+      console.log('Fetching all faculty...');
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('role', 'faculty')
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching faculty:', error);
+        throw error;
+      }
+      console.log('Faculty data:', data);
       return data || [];
     },
-    refetchInterval: 3000,
+    refetchInterval: 2000, // Faster updates
   });
 
-  const { data: allCourses, refetch: refetchCourses } = useQuery({
+  const { data: allCourses } = useQuery({
     queryKey: ['all-courses'],
     queryFn: async () => {
+      console.log('Fetching all courses...');
       const { data, error } = await supabase
         .from('courses')
         .select(`
@@ -102,10 +110,14 @@ const DirectAdminDashboard = () => {
         `)
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching courses:', error);
+        throw error;
+      }
+      console.log('Courses data:', data);
       return data || [];
     },
-    refetchInterval: 3000,
+    refetchInterval: 2000,
   });
 
   const { data: workActivities } = useQuery({
@@ -122,7 +134,7 @@ const DirectAdminDashboard = () => {
       if (error) throw error;
       return data || [];
     },
-    refetchInterval: 5000,
+    refetchInterval: 2000,
   });
 
   const { data: classRecords } = useQuery({
@@ -140,97 +152,110 @@ const DirectAdminDashboard = () => {
       if (error) throw error;
       return data || [];
     },
-    refetchInterval: 3000,
+    refetchInterval: 2000,
   });
 
-  // Mutations
+  // Mutations with proper error handling and cache invalidation
   const createFacultyMutation = useMutation({
     mutationFn: async (data: typeof facultyForm) => {
       console.log('Creating faculty with data:', data);
       
-      // First, try to sign up the user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          data: {
-            full_name: data.full_name,
-            role: 'faculty'
-          }
-        }
-      });
+      // Create a unique ID for the faculty member
+      const facultyId = crypto.randomUUID();
+      
+      // Insert directly into profiles table
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: facultyId,
+          full_name: data.full_name,
+          email: data.email,
+          department: data.department,
+          employee_id: data.employee_id,
+          role: 'faculty'
+        })
+        .select()
+        .single();
 
-      if (authError) {
-        console.error('Auth error:', authError);
-        // If auth signup fails, create profile directly
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: crypto.randomUUID(),
-            full_name: data.full_name,
-            email: data.email,
-            department: data.department,
-            employee_id: data.employee_id,
-            role: 'faculty'
-          })
-          .select()
-          .single();
-
-        if (profileError) throw profileError;
-        return profile;
+      if (profileError) {
+        console.error('Profile creation error:', profileError);
+        throw profileError;
       }
 
-      // If auth signup succeeded, update the profile
-      if (authData.user) {
-        const { data: profile, error: updateError } = await supabase
-          .from('profiles')
-          .update({
-            department: data.department,
-            employee_id: data.employee_id
-          })
-          .eq('id', authData.user.id)
-          .select()
-          .single();
-
-        if (updateError) throw updateError;
-        return profile;
-      }
-
-      throw new Error('Failed to create faculty');
+      console.log('Faculty created successfully:', profile);
+      return profile;
     },
     onSuccess: () => {
+      console.log('Faculty creation successful');
       toast({ title: "Success", description: "Faculty member created successfully" });
       setIsCreateFacultyOpen(false);
       setFacultyForm({ full_name: '', email: '', department: '', employee_id: '', password: '' });
-      refetchFaculty();
+      // Invalidate and refetch
+      queryClient.invalidateQueries({ queryKey: ['all-faculty'] });
     },
     onError: (error: any) => {
       console.error('Faculty creation error:', error);
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Failed to create faculty", variant: "destructive" });
+    }
+  });
+
+  const updateFacultyMutation = useMutation({
+    mutationFn: async (data: { id: string; updates: Partial<typeof facultyForm> }) => {
+      console.log('Updating faculty:', data);
+      const { data: updatedProfile, error } = await supabase
+        .from('profiles')
+        .update(data.updates)
+        .eq('id', data.id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Faculty update error:', error);
+        throw error;
+      }
+      return updatedProfile;
+    },
+    onSuccess: () => {
+      console.log('Faculty update successful');
+      toast({ title: "Success", description: "Faculty member updated successfully" });
+      setIsEditFacultyOpen(false);
+      setSelectedFaculty(null);
+      queryClient.invalidateQueries({ queryKey: ['all-faculty'] });
+    },
+    onError: (error: any) => {
+      console.error('Faculty update error:', error);
+      toast({ title: "Error", description: error.message || "Failed to update faculty", variant: "destructive" });
     }
   });
 
   const deleteFacultyMutation = useMutation({
     mutationFn: async (facultyId: string) => {
+      console.log('Deleting faculty:', facultyId);
       const { error } = await supabase
         .from('profiles')
         .delete()
         .eq('id', facultyId);
       
-      if (error) throw error;
+      if (error) {
+        console.error('Faculty deletion error:', error);
+        throw error;
+      }
     },
     onSuccess: () => {
+      console.log('Faculty deletion successful');
       toast({ title: "Success", description: "Faculty member deleted successfully" });
-      refetchFaculty();
+      queryClient.invalidateQueries({ queryKey: ['all-faculty'] });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      console.error('Faculty deletion error:', error);
+      toast({ title: "Error", description: error.message || "Failed to delete faculty", variant: "destructive" });
     }
   });
 
   const createCourseMutation = useMutation({
     mutationFn: async (data: typeof courseForm) => {
-      const { error } = await supabase
+      console.log('Creating course:', data);
+      const { data: course, error } = await supabase
         .from('courses')
         .insert({
           name: data.name,
@@ -239,11 +264,18 @@ const DirectAdminDashboard = () => {
           credits: data.credits,
           semester: data.semester,
           academic_year: data.academic_year
-        });
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Course creation error:', error);
+        throw error;
+      }
+      return course;
     },
     onSuccess: () => {
+      console.log('Course creation successful');
       toast({ title: "Success", description: "Course created successfully" });
       setIsCreateCourseOpen(false);
       setCourseForm({
@@ -254,35 +286,72 @@ const DirectAdminDashboard = () => {
         semester: '',
         academic_year: '2024-25'
       });
-      refetchCourses();
+      queryClient.invalidateQueries({ queryKey: ['all-courses'] });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      console.error('Course creation error:', error);
+      toast({ title: "Error", description: error.message || "Failed to create course", variant: "destructive" });
+    }
+  });
+
+  const updateCourseMutation = useMutation({
+    mutationFn: async (data: { id: string; updates: Partial<typeof courseForm> }) => {
+      console.log('Updating course:', data);
+      const { data: updatedCourse, error } = await supabase
+        .from('courses')
+        .update(data.updates)
+        .eq('id', data.id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Course update error:', error);
+        throw error;
+      }
+      return updatedCourse;
+    },
+    onSuccess: () => {
+      console.log('Course update successful');
+      toast({ title: "Success", description: "Course updated successfully" });
+      setIsEditCourseOpen(false);
+      setSelectedCourse(null);
+      queryClient.invalidateQueries({ queryKey: ['all-courses'] });
+    },
+    onError: (error: any) => {
+      console.error('Course update error:', error);
+      toast({ title: "Error", description: error.message || "Failed to update course", variant: "destructive" });
     }
   });
 
   const deleteCourse = useMutation({
     mutationFn: async (courseId: string) => {
+      console.log('Deleting course:', courseId);
       const { error } = await supabase
         .from('courses')
         .delete()
         .eq('id', courseId);
       
-      if (error) throw error;
+      if (error) {
+        console.error('Course deletion error:', error);
+        throw error;
+      }
     },
     onSuccess: () => {
+      console.log('Course deletion successful');
       toast({ title: "Success", description: "Course deleted successfully" });
-      refetchCourses();
+      queryClient.invalidateQueries({ queryKey: ['all-courses'] });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      console.error('Course deletion error:', error);
+      toast({ title: "Error", description: error.message || "Failed to delete course", variant: "destructive" });
     }
   });
 
   const assignFacultyMutation = useMutation({
     mutationFn: async (data: { facultyId: string; assignment: typeof assignmentForm }) => {
-      // Store assignment details in work_activities table as a temporary solution
-      const { error } = await supabase
+      console.log('Assigning faculty:', data);
+      // Store assignment details in work_activities table
+      const { data: assignment, error } = await supabase
         .from('work_activities')
         .insert({
           faculty_id: data.facultyId,
@@ -290,24 +359,34 @@ const DirectAdminDashboard = () => {
           description: `Branch: ${data.assignment.branch}, Semester: ${data.assignment.semester}, Time Slot: ${data.assignment.time_slot}, Students: ${data.assignment.total_students}`,
           activity_type: 'assignment',
           status: 'assigned'
-        });
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Assignment error:', error);
+        throw error;
+      }
+      return assignment;
     },
     onSuccess: () => {
+      console.log('Faculty assignment successful');
       toast({ title: "Success", description: "Faculty assignment created successfully" });
       setIsAssignmentOpen(false);
       setAssignmentForm({ branch: '', semester: '', subject: '', time_slot: '', total_students: '' });
+      queryClient.invalidateQueries({ queryKey: ['all-work-activities'] });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      console.error('Assignment error:', error);
+      toast({ title: "Error", description: error.message || "Failed to assign faculty", variant: "destructive" });
     }
   });
 
   const sendNotificationMutation = useMutation({
     mutationFn: async (data: typeof notificationForm) => {
-      // Store notification in work_activities table as a temporary solution
-      const { error } = await supabase
+      console.log('Sending notification:', data);
+      // Store notification in work_activities table
+      const { data: notification, error } = await supabase
         .from('work_activities')
         .insert({
           faculty_id: data.recipient_id,
@@ -315,26 +394,38 @@ const DirectAdminDashboard = () => {
           description: data.message,
           activity_type: 'notification',
           status: 'sent'
-        });
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Notification error:', error);
+        throw error;
+      }
+      return notification;
     },
     onSuccess: () => {
+      console.log('Notification sent successfully');
       toast({ title: "Success", description: "Notification sent successfully" });
       setIsNotificationOpen(false);
       setNotificationForm({ recipient_id: '', title: '', message: '' });
+      queryClient.invalidateQueries({ queryKey: ['all-work-activities'] });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      console.error('Notification error:', error);
+      toast({ title: "Error", description: error.message || "Failed to send notification", variant: "destructive" });
     }
   });
 
+  // Event handlers
   const handleAssignFaculty = (faculty: any) => {
+    console.log('Assign faculty clicked:', faculty);
     setSelectedFaculty(faculty);
     setIsAssignmentOpen(true);
   };
 
   const handleSendNotification = (faculty: any) => {
+    console.log('Send notification clicked:', faculty);
     setSelectedFaculty(faculty);
     setNotificationForm({
       recipient_id: faculty.id,
@@ -342,6 +433,33 @@ const DirectAdminDashboard = () => {
       message: ''
     });
     setIsNotificationOpen(true);
+  };
+
+  const handleEditFaculty = (faculty: any) => {
+    console.log('Edit faculty clicked:', faculty);
+    setSelectedFaculty(faculty);
+    setFacultyForm({
+      full_name: faculty.full_name,
+      email: faculty.email,
+      department: faculty.department || '',
+      employee_id: faculty.employee_id || '',
+      password: ''
+    });
+    setIsEditFacultyOpen(true);
+  };
+
+  const handleEditCourse = (course: any) => {
+    console.log('Edit course clicked:', course);
+    setSelectedCourse(course);
+    setCourseForm({
+      name: course.name,
+      code: course.code,
+      description: course.description || '',
+      credits: course.credits,
+      semester: course.semester || '',
+      academic_year: course.academic_year || '2024-25'
+    });
+    setIsEditCourseOpen(true);
   };
 
   const sidebarItems = [
@@ -508,60 +626,142 @@ const DirectAdminDashboard = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="dark:border-gray-700">
-                        <TableHead className="dark:text-gray-300">Name</TableHead>
-                        <TableHead className="dark:text-gray-300">Email</TableHead>
-                        <TableHead className="dark:text-gray-300">Department</TableHead>
-                        <TableHead className="dark:text-gray-300">Employee ID</TableHead>
-                        <TableHead className="dark:text-gray-300">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {allFaculty?.map((faculty) => (
-                        <TableRow key={faculty.id} className="dark:border-gray-700">
-                          <TableCell className="font-medium dark:text-white">{faculty.full_name}</TableCell>
-                          <TableCell className="dark:text-gray-300">{faculty.email}</TableCell>
-                          <TableCell className="dark:text-gray-300">{faculty.department || 'Not Set'}</TableCell>
-                          <TableCell className="dark:text-gray-300">{faculty.employee_id || 'Not Set'}</TableCell>
-                          <TableCell>
-                            <div className="flex space-x-2">
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                onClick={() => handleAssignFaculty(faculty)}
-                              >
-                                <UserPlus className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                onClick={() => handleSendNotification(faculty)}
-                              >
-                                <Bell className="h-4 w-4" />
-                              </Button>
-                              <Button size="sm" variant="outline">
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                size="sm" 
-                                variant="destructive"
-                                onClick={() => deleteFacultyMutation.mutate(faculty.id)}
-                                disabled={deleteFacultyMutation.isPending}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
+                  {facultyLoading ? (
+                    <div className="text-center py-4">Loading faculty...</div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="dark:border-gray-700">
+                          <TableHead className="dark:text-gray-300">Name</TableHead>
+                          <TableHead className="dark:text-gray-300">Email</TableHead>
+                          <TableHead className="dark:text-gray-300">Department</TableHead>
+                          <TableHead className="dark:text-gray-300">Employee ID</TableHead>
+                          <TableHead className="dark:text-gray-300">Actions</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {allFaculty?.map((faculty) => (
+                          <TableRow key={faculty.id} className="dark:border-gray-700">
+                            <TableCell className="font-medium dark:text-white">{faculty.full_name}</TableCell>
+                            <TableCell className="dark:text-gray-300">{faculty.email}</TableCell>
+                            <TableCell className="dark:text-gray-300">{faculty.department || 'Not Set'}</TableCell>
+                            <TableCell className="dark:text-gray-300">{faculty.employee_id || 'Not Set'}</TableCell>
+                            <TableCell>
+                              <div className="flex space-x-2">
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => handleAssignFaculty(faculty)}
+                                  title="Assign Subject"
+                                >
+                                  <UserPlus className="h-4 w-4" />
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => handleSendNotification(faculty)}
+                                  title="Send Notification"
+                                >
+                                  <Bell className="h-4 w-4" />
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => handleEditFaculty(faculty)}
+                                  title="Edit Faculty"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="destructive"
+                                  onClick={() => {
+                                    if (window.confirm('Are you sure you want to delete this faculty member?')) {
+                                      deleteFacultyMutation.mutate(faculty.id);
+                                    }
+                                  }}
+                                  disabled={deleteFacultyMutation.isPending}
+                                  title="Delete Faculty"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
                 </CardContent>
               </Card>
             </div>
           )}
+
+          {/* Edit Faculty Dialog */}
+          <Dialog open={isEditFacultyOpen} onOpenChange={setIsEditFacultyOpen}>
+            <DialogContent className="dark:bg-gray-800">
+              <DialogHeader>
+                <DialogTitle className="dark:text-white">Edit Faculty Member</DialogTitle>
+                <DialogDescription className="dark:text-gray-300">
+                  Update faculty member information
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="editFullName" className="dark:text-gray-300">Full Name</Label>
+                  <Input
+                    id="editFullName"
+                    value={facultyForm.full_name}
+                    onChange={(e) => setFacultyForm({...facultyForm, full_name: e.target.value})}
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editEmail" className="dark:text-gray-300">Email</Label>
+                  <Input
+                    id="editEmail"
+                    type="email"
+                    value={facultyForm.email}
+                    onChange={(e) => setFacultyForm({...facultyForm, email: e.target.value})}
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editDepartment" className="dark:text-gray-300">Department</Label>
+                  <Input
+                    id="editDepartment"
+                    value={facultyForm.department}
+                    onChange={(e) => setFacultyForm({...facultyForm, department: e.target.value})}
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editEmployeeId" className="dark:text-gray-300">Employee ID</Label>
+                  <Input
+                    id="editEmployeeId"
+                    value={facultyForm.employee_id}
+                    onChange={(e) => setFacultyForm({...facultyForm, employee_id: e.target.value})}
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <Button 
+                  onClick={() => selectedFaculty && updateFacultyMutation.mutate({ 
+                    id: selectedFaculty.id, 
+                    updates: {
+                      full_name: facultyForm.full_name,
+                      email: facultyForm.email,
+                      department: facultyForm.department,
+                      employee_id: facultyForm.employee_id
+                    }
+                  })}
+                  disabled={updateFacultyMutation.isPending}
+                  className="w-full"
+                >
+                  {updateFacultyMutation.isPending ? 'Updating...' : 'Update Faculty'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* Assignment Dialog */}
           <Dialog open={isAssignmentOpen} onOpenChange={setIsAssignmentOpen}>
@@ -673,7 +873,7 @@ const DirectAdminDashboard = () => {
             </DialogContent>
           </Dialog>
 
-          {/* Other sections remain the same */}
+          {/* Course Management Section */}
           {activeSection === 'course-management' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center">
@@ -714,6 +914,23 @@ const DirectAdminDashboard = () => {
                           className="dark:bg-gray-700 dark:text-white"
                         />
                       </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Credits</Label>
+                        <Input
+                          type="number"
+                          value={courseForm.credits}
+                          onChange={(e) => setCourseForm({...courseForm, credits: parseInt(e.target.value)})}
+                          className="dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Semester</Label>
+                        <Input
+                          value={courseForm.semester}
+                          onChange={(e) => setCourseForm({...courseForm, semester: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
                       <Button 
                         onClick={() => createCourseMutation.mutate(courseForm)}
                         disabled={createCourseMutation.isPending}
@@ -750,14 +967,24 @@ const DirectAdminDashboard = () => {
                           <TableCell className="dark:text-gray-300">{course.credits}</TableCell>
                           <TableCell>
                             <div className="flex space-x-2">
-                              <Button size="sm" variant="outline">
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => handleEditCourse(course)}
+                                title="Edit Course"
+                              >
                                 <Edit className="h-4 w-4" />
                               </Button>
                               <Button 
                                 size="sm" 
                                 variant="destructive"
-                                onClick={() => deleteCourse.mutate(course.id)}
+                                onClick={() => {
+                                  if (window.confirm('Are you sure you want to delete this course?')) {
+                                    deleteCourse.mutate(course.id);
+                                  }
+                                }}
                                 disabled={deleteCourse.isPending}
+                                title="Delete Course"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -772,12 +999,78 @@ const DirectAdminDashboard = () => {
             </div>
           )}
 
+          {/* Edit Course Dialog */}
+          <Dialog open={isEditCourseOpen} onOpenChange={setIsEditCourseOpen}>
+            <DialogContent className="dark:bg-gray-800">
+              <DialogHeader>
+                <DialogTitle className="dark:text-white">Edit Course</DialogTitle>
+                <DialogDescription className="dark:text-gray-300">
+                  Update course information
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label className="dark:text-gray-300">Course Name</Label>
+                  <Input
+                    value={courseForm.name}
+                    onChange={(e) => setCourseForm({...courseForm, name: e.target.value})}
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label className="dark:text-gray-300">Course Code</Label>
+                  <Input
+                    value={courseForm.code}
+                    onChange={(e) => setCourseForm({...courseForm, code: e.target.value})}
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label className="dark:text-gray-300">Description</Label>
+                  <Textarea
+                    value={courseForm.description}
+                    onChange={(e) => setCourseForm({...courseForm, description: e.target.value})}
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label className="dark:text-gray-300">Credits</Label>
+                  <Input
+                    type="number"
+                    value={courseForm.credits}
+                    onChange={(e) => setCourseForm({...courseForm, credits: parseInt(e.target.value)})}
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <Label className="dark:text-gray-300">Semester</Label>
+                  <Input
+                    value={courseForm.semester}
+                    onChange={(e) => setCourseForm({...courseForm, semester: e.target.value})}
+                    className="dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <Button 
+                  onClick={() => selectedCourse && updateCourseMutation.mutate({ 
+                    id: selectedCourse.id, 
+                    updates: courseForm 
+                  })}
+                  disabled={updateCourseMutation.isPending}
+                  className="w-full"
+                >
+                  {updateCourseMutation.isPending ? 'Updating...' : 'Update Course'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Other sections remain the same */}
           {activeSection === 'work-activities' && (
             <Card className="dark:bg-gray-800">
               <CardHeader>
                 <CardTitle className="dark:text-white">Work Activities</CardTitle>
                 <CardDescription className="dark:text-gray-300">
-                  View all faculty work activities
+                  View all faculty work activities, assignments, and notifications
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -787,7 +1080,7 @@ const DirectAdminDashboard = () => {
                       <TableHead className="dark:text-gray-300">Faculty</TableHead>
                       <TableHead className="dark:text-gray-300">Title</TableHead>
                       <TableHead className="dark:text-gray-300">Type</TableHead>
-                      <TableHead className="dark:text-gray-300">Hours</TableHead>
+                      <TableHead className="dark:text-gray-300">Status</TableHead>
                       <TableHead className="dark:text-gray-300">Date</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -796,9 +1089,13 @@ const DirectAdminDashboard = () => {
                       <TableRow key={activity.id} className="dark:border-gray-700">
                         <TableCell className="font-medium dark:text-white">{activity.profiles?.full_name}</TableCell>
                         <TableCell className="dark:text-gray-300">{activity.title}</TableCell>
-                        <TableCell className="dark:text-gray-300">{activity.activity_type}</TableCell>
-                        <TableCell className="dark:text-gray-300">{activity.hours_spent || 0}</TableCell>
-                        <TableCell className="dark:text-gray-300">{activity.start_date}</TableCell>
+                        <TableCell className="dark:text-gray-300">
+                          <Badge variant={activity.activity_type === 'assignment' ? 'default' : 'secondary'}>
+                            {activity.activity_type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="dark:text-gray-300">{activity.status}</TableCell>
+                        <TableCell className="dark:text-gray-300">{activity.created_at ? new Date(activity.created_at).toLocaleDateString() : 'N/A'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
