@@ -47,17 +47,6 @@ const DirectAdminDashboard = () => {
     password: 'faculty123' // Default password
   });
 
-  // Assignment form state
-  const [assignmentForm, setAssignmentForm] = useState({
-    faculty_id: '',
-    branch: '',
-    semester: '',
-    subject: '',
-    time_slot: '',
-    total_students: '',
-    academic_year: '2024-25'
-  });
-
   // Course form state
   const [courseForm, setCourseForm] = useState({
     name: '',
@@ -66,14 +55,6 @@ const DirectAdminDashboard = () => {
     credits: 3,
     semester: '',
     academic_year: '2024-25'
-  });
-
-  // Notification form state
-  const [notificationForm, setNotificationForm] = useState({
-    recipient_id: '',
-    title: '',
-    message: '',
-    type: 'info'
   });
 
   // Real-time data fetching
@@ -100,23 +81,6 @@ const DirectAdminDashboard = () => {
         .select(`
           *,
           profiles (full_name)
-        `)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return data || [];
-    },
-    refetchInterval: 3000,
-  });
-
-  const { data: facultyAssignments } = useQuery({
-    queryKey: ['faculty-assignments'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('faculty_assignments')
-        .select(`
-          *,
-          profiles (full_name, email)
         `)
         .order('created_at', { ascending: false });
       
@@ -192,37 +156,6 @@ const DirectAdminDashboard = () => {
     }
   });
 
-  const createAssignmentMutation = useMutation({
-    mutationFn: async (data: typeof assignmentForm) => {
-      const { error } = await supabase
-        .from('faculty_assignments')
-        .insert({
-          faculty_id: data.faculty_id,
-          branch: data.branch,
-          semester: data.semester,
-          subject: data.subject,
-          time_slot: data.time_slot,
-          total_students: parseInt(data.total_students),
-          academic_year: data.academic_year
-        });
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast({ title: "Success", description: "Assignment created successfully" });
-      setAssignmentForm({
-        faculty_id: '',
-        branch: '',
-        semester: '',
-        subject: '',
-        time_slot: '',
-        total_students: '',
-        academic_year: '2024-25'
-      });
-      queryClient.invalidateQueries({ queryKey: ['faculty-assignments'] });
-    }
-  });
-
   const createCourseMutation = useMutation({
     mutationFn: async (data: typeof courseForm) => {
       const { error } = await supabase
@@ -250,27 +183,6 @@ const DirectAdminDashboard = () => {
         academic_year: '2024-25'
       });
       queryClient.invalidateQueries({ queryKey: ['all-courses'] });
-    }
-  });
-
-  const sendNotificationMutation = useMutation({
-    mutationFn: async (data: typeof notificationForm) => {
-      const { error } = await supabase
-        .from('notifications')
-        .insert({
-          recipient_id: data.recipient_id,
-          sender_id: '00000000-0000-0000-0000-000000000000', // Admin placeholder
-          title: data.title,
-          message: data.message,
-          type: data.type
-        });
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast({ title: "Success", description: "Notification sent successfully" });
-      setIsNotificationOpen(false);
-      setNotificationForm({ recipient_id: '', title: '', message: '', type: 'info' });
     }
   });
 
@@ -413,62 +325,10 @@ const DirectAdminDashboard = () => {
                     </DialogContent>
                   </Dialog>
 
-                  <Dialog open={isNotificationOpen} onOpenChange={setIsNotificationOpen}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline">
-                        <Bell className="h-4 w-4 mr-2" />
-                        Send Notification
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="dark:bg-gray-800">
-                      <DialogHeader>
-                        <DialogTitle className="dark:text-white">Send Notification</DialogTitle>
-                        <DialogDescription className="dark:text-gray-300">
-                          Send a notification to faculty members
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div>
-                          <Label className="dark:text-gray-300">Select Faculty</Label>
-                          <Select value={notificationForm.recipient_id} onValueChange={(value) => setNotificationForm({...notificationForm, recipient_id: value})}>
-                            <SelectTrigger className="dark:bg-gray-700 dark:text-white">
-                              <SelectValue placeholder="Select faculty member" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {allFaculty?.map((faculty) => (
-                                <SelectItem key={faculty.id} value={faculty.id}>
-                                  {faculty.full_name} ({faculty.email})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label className="dark:text-gray-300">Title</Label>
-                          <Input
-                            value={notificationForm.title}
-                            onChange={(e) => setNotificationForm({...notificationForm, title: e.target.value})}
-                            className="dark:bg-gray-700 dark:text-white"
-                          />
-                        </div>
-                        <div>
-                          <Label className="dark:text-gray-300">Message</Label>
-                          <Textarea
-                            value={notificationForm.message}
-                            onChange={(e) => setNotificationForm({...notificationForm, message: e.target.value})}
-                            className="dark:bg-gray-700 dark:text-white"
-                          />
-                        </div>
-                        <Button 
-                          onClick={() => sendNotificationMutation.mutate(notificationForm)}
-                          disabled={sendNotificationMutation.isPending}
-                          className="w-full"
-                        >
-                          {sendNotificationMutation.isPending ? 'Sending...' : 'Send Notification'}
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                  <Button variant="outline">
+                    <Bell className="h-4 w-4 mr-2" />
+                    Send Notification
+                  </Button>
                 </div>
               </div>
 
@@ -477,79 +337,13 @@ const DirectAdminDashboard = () => {
                 <CardHeader>
                   <CardTitle className="dark:text-white">Faculty Assignments</CardTitle>
                   <CardDescription className="dark:text-gray-300">
-                    Assign subjects, branches, and time slots to faculty
+                    Assign subjects, branches, and time slots to faculty (Feature coming soon)
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <div>
-                      <Label className="dark:text-gray-300">Select Faculty</Label>
-                      <Select value={assignmentForm.faculty_id} onValueChange={(value) => setAssignmentForm({...assignmentForm, faculty_id: value})}>
-                        <SelectTrigger className="dark:bg-gray-700 dark:text-white">
-                          <SelectValue placeholder="Select faculty" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {allFaculty?.map((faculty) => (
-                            <SelectItem key={faculty.id} value={faculty.id}>
-                              {faculty.full_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="dark:text-gray-300">Branch</Label>
-                      <Input
-                        value={assignmentForm.branch}
-                        onChange={(e) => setAssignmentForm({...assignmentForm, branch: e.target.value})}
-                        placeholder="e.g., B.Tech CSE"
-                        className="dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <Label className="dark:text-gray-300">Semester</Label>
-                      <Input
-                        value={assignmentForm.semester}
-                        onChange={(e) => setAssignmentForm({...assignmentForm, semester: e.target.value})}
-                        placeholder="e.g., 3rd"
-                        className="dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <Label className="dark:text-gray-300">Subject</Label>
-                      <Input
-                        value={assignmentForm.subject}
-                        onChange={(e) => setAssignmentForm({...assignmentForm, subject: e.target.value})}
-                        placeholder="e.g., Data Structures"
-                        className="dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <Label className="dark:text-gray-300">Time Slot</Label>
-                      <Input
-                        value={assignmentForm.time_slot}
-                        onChange={(e) => setAssignmentForm({...assignmentForm, time_slot: e.target.value})}
-                        placeholder="e.g., 10:00 AM - 11:00 AM"
-                        className="dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <Label className="dark:text-gray-300">Total Students</Label>
-                      <Input
-                        type="number"
-                        value={assignmentForm.total_students}
-                        onChange={(e) => setAssignmentForm({...assignmentForm, total_students: e.target.value})}
-                        placeholder="e.g., 30"
-                        className="dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
+                  <div className="text-center text-gray-500 dark:text-gray-400 py-8">
+                    Assignment functionality will be available once the database schema is fully updated.
                   </div>
-                  <Button 
-                    onClick={() => createAssignmentMutation.mutate(assignmentForm)}
-                    disabled={createAssignmentMutation.isPending}
-                  >
-                    {createAssignmentMutation.isPending ? 'Creating...' : 'Create Assignment'}
-                  </Button>
                 </CardContent>
               </Card>
 

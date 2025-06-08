@@ -65,42 +65,6 @@ const FacultyDashboard = () => {
     enabled: !!user?.id,
   });
 
-  // Fetch faculty assignments
-  const { data: assignments } = useQuery({
-    queryKey: ['faculty-assignments', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return [];
-      const { data, error } = await supabase
-        .from('faculty_assignments')
-        .select('*')
-        .eq('faculty_id', user.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!user?.id,
-    refetchInterval: 5000,
-  });
-
-  // Fetch notifications
-  const { data: notifications } = useQuery({
-    queryKey: ['notifications', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return [];
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('recipient_id', user.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!user?.id,
-    refetchInterval: 3000,
-  });
-
   const { data: classRecords } = useQuery({
     queryKey: ['class-records', user?.id],
     queryFn: async () => {
@@ -231,20 +195,6 @@ const FacultyDashboard = () => {
     }
   });
 
-  const markNotificationRead = useMutation({
-    mutationFn: async (notificationId: string) => {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ read: true })
-        .eq('id', notificationId);
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
-    }
-  });
-
   if (!user) {
     return <Navigate to="/auth" replace />;
   }
@@ -262,7 +212,7 @@ const FacultyDashboard = () => {
   const sidebarItems = [
     { id: 'dashboard', label: 'Faculty Dashboard', icon: User },
     { id: 'assignments', label: 'My Assignments', icon: Calendar },
-    { id: 'notifications', label: 'Notifications', icon: Bell, badge: notifications?.filter(n => !n.read).length },
+    { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'activity-report', label: 'Activity Report', icon: Activity },
     { id: 'class-report', label: 'Class Report', icon: FileText },
     { id: 'update-profile', label: 'Update Profile', icon: User },
@@ -296,11 +246,6 @@ const FacultyDashboard = () => {
                 <item.icon className="h-4 w-4" />
                 <span className="text-sm">{item.label}</span>
               </div>
-              {item.badge && item.badge > 0 && (
-                <Badge variant="destructive" className="text-xs">
-                  {item.badge}
-                </Badge>
-              )}
             </button>
           ))}
         </nav>
@@ -402,50 +347,10 @@ const FacultyDashboard = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {assignments && assignments.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {assignments.map((assignment) => (
-                        <Card key={assignment.id} className="p-4">
-                          <div className="space-y-3">
-                            <div>
-                              <Label className="text-sm font-medium text-gray-600">Subject</Label>
-                              <div className="text-lg font-semibold text-blue-600">{assignment.subject}</div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <Label className="text-sm font-medium text-gray-600">Branch</Label>
-                                <div className="text-sm">{assignment.branch}</div>
-                              </div>
-                              <div>
-                                <Label className="text-sm font-medium text-gray-600">Semester</Label>
-                                <div className="text-sm">{assignment.semester}</div>
-                              </div>
-                            </div>
-                            <div>
-                              <Label className="text-sm font-medium text-gray-600">Time Slot</Label>
-                              <div className="text-sm font-medium">{assignment.time_slot}</div>
-                            </div>
-                            <div>
-                              <Label className="text-sm font-medium text-gray-600">Total Students</Label>
-                              <div className="text-sm">{assignment.total_students}</div>
-                            </div>
-                            <div>
-                              <Label className="text-sm font-medium text-gray-600">Academic Year</Label>
-                              <div className="text-sm">{assignment.academic_year}</div>
-                            </div>
-                            <Badge variant="secondary" className="w-fit">
-                              Active Assignment
-                            </Badge>
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center text-gray-500 py-8">
-                      <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                      <p>No assignments found. Contact admin for assignment details.</p>
-                    </div>
-                  )}
+                  <div className="text-center text-gray-500 py-8">
+                    <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p>Assignment functionality will be available once admin configures your assignments.</p>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -461,42 +366,10 @@ const FacultyDashboard = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {notifications && notifications.length > 0 ? (
-                    <div className="space-y-4">
-                      {notifications.map((notification) => (
-                        <Card key={notification.id} className={`p-4 ${!notification.read ? 'border-blue-500 bg-blue-50' : ''}`}>
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <div className="flex items-center space-x-2 mb-2">
-                                <h3 className="font-semibold">{notification.title}</h3>
-                                {!notification.read && (
-                                  <Badge variant="default" className="text-xs">New</Badge>
-                                )}
-                              </div>
-                              <p className="text-gray-600 mb-2">{notification.message}</p>
-                              <p className="text-xs text-gray-500">
-                                {new Date(notification.created_at).toLocaleString()}
-                              </p>
-                            </div>
-                            {!notification.read && (
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                onClick={() => markNotificationRead.mutate(notification.id)}
-                              >
-                                Mark Read
-                              </Button>
-                            )}
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center text-gray-500 py-8">
-                      <Bell className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                      <p>No notifications yet.</p>
-                    </div>
-                  )}
+                  <div className="text-center text-gray-500 py-8">
+                    <Bell className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p>Notification functionality will be available once the system is fully configured.</p>
+                  </div>
                 </CardContent>
               </Card>
             </div>
