@@ -58,6 +58,56 @@ export type Database = {
           },
         ]
       }
+      class_records: {
+        Row: {
+          created_at: string
+          description: string | null
+          document_url: string | null
+          faculty_id: string
+          id: string
+          remarks: string | null
+          session_date: string
+          students_absent: number
+          students_present: number
+          topic_covered: string
+          total_students: number
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          document_url?: string | null
+          faculty_id: string
+          id?: string
+          remarks?: string | null
+          session_date?: string
+          students_absent: number
+          students_present: number
+          topic_covered: string
+          total_students: number
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          document_url?: string | null
+          faculty_id?: string
+          id?: string
+          remarks?: string | null
+          session_date?: string
+          students_absent?: number
+          students_present?: number
+          topic_covered?: string
+          total_students?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "class_records_faculty_id_fkey"
+            columns: ["faculty_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       class_sessions: {
         Row: {
           course_id: string | null
@@ -373,11 +423,62 @@ export type Database = {
           },
         ]
       }
+      work_details: {
+        Row: {
+          created_at: string
+          description: string
+          document_url: string | null
+          duration: string
+          faculty_id: string
+          id: string
+          remarks: string | null
+          session_date: string
+          slot_type: string | null
+          work_type: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          document_url?: string | null
+          duration: string
+          faculty_id: string
+          id?: string
+          remarks?: string | null
+          session_date?: string
+          slot_type?: string | null
+          work_type: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          document_url?: string | null
+          duration?: string
+          faculty_id?: string
+          id?: string
+          remarks?: string | null
+          session_date?: string
+          slot_type?: string | null
+          work_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_details_faculty_id_fkey"
+            columns: ["faculty_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      get_current_user_role: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       get_user_role: {
         Args: { user_id: string }
         Returns: Database["public"]["Enums"]["user_role"]

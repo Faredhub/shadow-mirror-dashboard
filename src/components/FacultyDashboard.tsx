@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -23,7 +24,9 @@ import {
   CheckCircle,
   Bell,
   UserCheck,
-  BookmarkPlus
+  BookmarkPlus,
+  FileText,
+  ClipboardList
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useToast } from '@/hooks/use-toast';
@@ -43,7 +46,8 @@ const FacultyDashboard = () => {
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState('assignments');
   const [isCreateWorkOpen, setIsCreateWorkOpen] = useState(false);
-  const [isCreateClassOpen, setIsCreateClassOpen] = useState(false);
+  const [isCreateClassRecordOpen, setIsCreateClassRecordOpen] = useState(false);
+  const [isCreateWorkDetailOpen, setIsCreateWorkDetailOpen] = useState(false);
 
   // Work activity form state
   const [workForm, setWorkForm] = useState({
@@ -55,15 +59,27 @@ const FacultyDashboard = () => {
     end_date: ''
   });
 
-  // Class session form state
-  const [classForm, setClassForm] = useState({
-    course_id: '',
-    session_date: '',
-    start_time: '',
-    end_time: '',
-    topic: '',
-    session_type: 'lecture',
-    location: ''
+  // Class record form state
+  const [classRecordForm, setClassRecordForm] = useState({
+    topic_covered: '',
+    students_present: 0,
+    students_absent: 0,
+    total_students: 0,
+    document_url: '',
+    description: '',
+    remarks: '',
+    session_date: new Date().toISOString().split('T')[0]
+  });
+
+  // Work detail form state
+  const [workDetailForm, setWorkDetailForm] = useState({
+    work_type: '',
+    duration: '',
+    document_url: '',
+    description: '',
+    remarks: '',
+    slot_type: 'morning',
+    session_date: new Date().toISOString().split('T')[0]
   });
 
   // Real-time data fetching for faculty assignments and notifications
@@ -71,7 +87,6 @@ const FacultyDashboard = () => {
     queryKey: ['faculty-assignments', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
-      console.log('Fetching assignments for faculty:', user.id);
       
       const { data, error } = await supabase
         .from('work_activities')
@@ -80,11 +95,7 @@ const FacultyDashboard = () => {
         .eq('activity_type', 'assignment')
         .order('created_at', { ascending: false });
       
-      if (error) {
-        console.error('Error fetching assignments:', error);
-        throw error;
-      }
-      console.log('Assignments data:', data);
+      if (error) throw error;
       return data || [];
     },
     enabled: !!user?.id,
@@ -95,7 +106,6 @@ const FacultyDashboard = () => {
     queryKey: ['faculty-notifications', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
-      console.log('Fetching notifications for faculty:', user.id);
       
       const { data, error } = await supabase
         .from('work_activities')
@@ -104,11 +114,7 @@ const FacultyDashboard = () => {
         .eq('activity_type', 'notification')
         .order('created_at', { ascending: false });
       
-      if (error) {
-        console.error('Error fetching notifications:', error);
-        throw error;
-      }
-      console.log('Notifications data:', data);
+      if (error) throw error;
       return data || [];
     },
     enabled: !!user?.id,
@@ -134,13 +140,13 @@ const FacultyDashboard = () => {
     refetchInterval: 3000,
   });
 
-  const { data: courses } = useQuery({
-    queryKey: ['faculty-courses', user?.id],
+  const { data: classRecords } = useQuery({
+    queryKey: ['faculty-class-records', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
       
       const { data, error } = await supabase
-        .from('courses')
+        .from('class_records')
         .select('*')
         .eq('faculty_id', user.id)
         .order('created_at', { ascending: false });
@@ -152,19 +158,16 @@ const FacultyDashboard = () => {
     refetchInterval: 3000,
   });
 
-  const { data: classSessions } = useQuery({
-    queryKey: ['faculty-class-sessions', user?.id],
+  const { data: workDetails } = useQuery({
+    queryKey: ['faculty-work-details', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
       
       const { data, error } = await supabase
-        .from('class_sessions')
-        .select(`
-          *,
-          courses (name, code)
-        `)
+        .from('work_details')
+        .select('*')
         .eq('faculty_id', user.id)
-        .order('session_date', { ascending: false });
+        .order('created_at', { ascending: false });
       
       if (error) throw error;
       return data || [];
@@ -214,41 +217,84 @@ const FacultyDashboard = () => {
     }
   });
 
-  const createClassSessionMutation = useMutation({
-    mutationFn: async (data: typeof classForm) => {
+  const createClassRecordMutation = useMutation({
+    mutationFn: async (data: typeof classRecordForm) => {
       if (!user?.id) throw new Error('User not authenticated');
       
-      const { data: session, error } = await supabase
-        .from('class_sessions')
+      const { data: record, error } = await supabase
+        .from('class_records')
         .insert({
           faculty_id: user.id,
-          course_id: data.course_id,
-          session_date: data.session_date,
-          start_time: data.start_time,
-          end_time: data.end_time,
-          topic: data.topic,
-          session_type: data.session_type,
-          location: data.location
+          topic_covered: data.topic_covered,
+          students_present: data.students_present,
+          students_absent: data.students_absent,
+          total_students: data.total_students,
+          document_url: data.document_url || null,
+          description: data.description || null,
+          remarks: data.remarks || null,
+          session_date: data.session_date
         })
         .select()
         .single();
 
       if (error) throw error;
-      return session;
+      return record;
     },
     onSuccess: () => {
-      toast({ title: "Success", description: "Class session created successfully" });
-      setIsCreateClassOpen(false);
-      setClassForm({
-        course_id: '',
-        session_date: '',
-        start_time: '',
-        end_time: '',
-        topic: '',
-        session_type: 'lecture',
-        location: ''
+      toast({ title: "Success", description: "Class record created successfully" });
+      setIsCreateClassRecordOpen(false);
+      setClassRecordForm({
+        topic_covered: '',
+        students_present: 0,
+        students_absent: 0,
+        total_students: 0,
+        document_url: '',
+        description: '',
+        remarks: '',
+        session_date: new Date().toISOString().split('T')[0]
       });
-      queryClient.invalidateQueries({ queryKey: ['faculty-class-sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['faculty-class-records'] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const createWorkDetailMutation = useMutation({
+    mutationFn: async (data: typeof workDetailForm) => {
+      if (!user?.id) throw new Error('User not authenticated');
+      
+      const { data: detail, error } = await supabase
+        .from('work_details')
+        .insert({
+          faculty_id: user.id,
+          work_type: data.work_type,
+          duration: data.duration,
+          document_url: data.document_url || null,
+          description: data.description,
+          remarks: data.remarks || null,
+          slot_type: data.slot_type,
+          session_date: data.session_date
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return detail;
+    },
+    onSuccess: () => {
+      toast({ title: "Success", description: "Work detail created successfully" });
+      setIsCreateWorkDetailOpen(false);
+      setWorkDetailForm({
+        work_type: '',
+        duration: '',
+        document_url: '',
+        description: '',
+        remarks: '',
+        slot_type: 'morning',
+        session_date: new Date().toISOString().split('T')[0]
+      });
+      queryClient.invalidateQueries({ queryKey: ['faculty-work-details'] });
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -259,8 +305,8 @@ const FacultyDashboard = () => {
     { id: 'assignments', label: 'My Assignments', icon: BookmarkPlus },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'work-activities', label: 'Work Activities', icon: BarChart3 },
-    { id: 'courses', label: 'My Courses', icon: BookOpen },
-    { id: 'class-sessions', label: 'Class Sessions', icon: Calendar },
+    { id: 'class-records', label: 'Class Records', icon: FileText },
+    { id: 'work-details', label: 'Work Details', icon: ClipboardList },
     { id: 'attendance', label: 'Attendance', icon: UserCheck },
   ];
 
@@ -359,7 +405,6 @@ const FacultyDashboard = () => {
               <div className="grid gap-4">
                 {assignments && assignments.length > 0 ? (
                   assignments.map((assignment) => {
-                    // Parse the description to extract assignment details
                     const description = assignment.description || '';
                     const branch = description.match(/Branch: ([^,]+)/)?.[1] || 'N/A';
                     const semester = description.match(/Semester: ([^,]+)/)?.[1] || 'N/A';
@@ -410,9 +455,6 @@ const FacultyDashboard = () => {
                     <CardContent className="text-center py-8">
                       <BookmarkPlus className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                       <p className="text-gray-500 dark:text-gray-400">No assignments yet</p>
-                      <p className="text-sm text-gray-400 dark:text-gray-500">
-                        Admin will assign subjects to you soon
-                      </p>
                     </CardContent>
                   </Card>
                 )}
@@ -461,9 +503,6 @@ const FacultyDashboard = () => {
                     <CardContent className="text-center py-8">
                       <Bell className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                       <p className="text-gray-500 dark:text-gray-400">No notifications</p>
-                      <p className="text-sm text-gray-400 dark:text-gray-500">
-                        You'll receive notifications from admin here
-                      </p>
                     </CardContent>
                   </Card>
                 )}
@@ -486,9 +525,6 @@ const FacultyDashboard = () => {
                   <DialogContent className="dark:bg-gray-800">
                     <DialogHeader>
                       <DialogTitle className="dark:text-white">Create Work Activity</DialogTitle>
-                      <DialogDescription className="dark:text-gray-300">
-                        Record your teaching, research, or administrative activities
-                      </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
                       <div>
@@ -497,7 +533,6 @@ const FacultyDashboard = () => {
                           value={workForm.title}
                           onChange={(e) => setWorkForm({...workForm, title: e.target.value})}
                           className="dark:bg-gray-700 dark:text-white"
-                          placeholder="Activity title"
                         />
                       </div>
                       <div>
@@ -506,7 +541,6 @@ const FacultyDashboard = () => {
                           value={workForm.description}
                           onChange={(e) => setWorkForm({...workForm, description: e.target.value})}
                           className="dark:bg-gray-700 dark:text-white"
-                          placeholder="Activity description"
                         />
                       </div>
                       <div>
@@ -530,7 +564,6 @@ const FacultyDashboard = () => {
                           value={workForm.hours_spent}
                           onChange={(e) => setWorkForm({...workForm, hours_spent: parseFloat(e.target.value)})}
                           className="dark:bg-gray-700 dark:text-white"
-                          placeholder="0"
                         />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
@@ -584,12 +617,8 @@ const FacultyDashboard = () => {
                     <CardContent>
                       <p className="dark:text-gray-300 mb-2">{activity.description}</p>
                       <div className="text-sm text-gray-500 dark:text-gray-400">
-                        {activity.start_date && (
-                          <span>From {activity.start_date}</span>
-                        )}
-                        {activity.end_date && (
-                          <span> to {activity.end_date}</span>
-                        )}
+                        {activity.start_date && <span>From {activity.start_date}</span>}
+                        {activity.end_date && <span> to {activity.end_date}</span>}
                       </div>
                     </CardContent>
                   </Card>
@@ -598,33 +627,272 @@ const FacultyDashboard = () => {
             </div>
           )}
 
-          {/* Other sections remain the same */}
-          {activeSection === 'courses' && (
-            <Card className="dark:bg-gray-800">
-              <CardHeader>
-                <CardTitle className="dark:text-white">My Courses</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-                  Course management coming soon
-                </div>
-              </CardContent>
-            </Card>
+          {/* Class Records Section */}
+          {activeSection === 'class-records' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold dark:text-white">Class Records</h2>
+                <Dialog open={isCreateClassRecordOpen} onOpenChange={setIsCreateClassRecordOpen}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Class Record
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="dark:bg-gray-800">
+                    <DialogHeader>
+                      <DialogTitle className="dark:text-white">Create Class Record</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label className="dark:text-gray-300">Topic Covered</Label>
+                        <Input
+                          value={classRecordForm.topic_covered}
+                          onChange={(e) => setClassRecordForm({...classRecordForm, topic_covered: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <Label className="dark:text-gray-300">Students Present</Label>
+                          <Input
+                            type="number"
+                            value={classRecordForm.students_present}
+                            onChange={(e) => setClassRecordForm({...classRecordForm, students_present: parseInt(e.target.value)})}
+                            className="dark:bg-gray-700 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <Label className="dark:text-gray-300">Students Absent</Label>
+                          <Input
+                            type="number"
+                            value={classRecordForm.students_absent}
+                            onChange={(e) => setClassRecordForm({...classRecordForm, students_absent: parseInt(e.target.value)})}
+                            className="dark:bg-gray-700 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <Label className="dark:text-gray-300">Total Students</Label>
+                          <Input
+                            type="number"
+                            value={classRecordForm.total_students}
+                            onChange={(e) => setClassRecordForm({...classRecordForm, total_students: parseInt(e.target.value)})}
+                            className="dark:bg-gray-700 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Document URL</Label>
+                        <Input
+                          value={classRecordForm.document_url}
+                          onChange={(e) => setClassRecordForm({...classRecordForm, document_url: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Description</Label>
+                        <Textarea
+                          value={classRecordForm.description}
+                          onChange={(e) => setClassRecordForm({...classRecordForm, description: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Session Date</Label>
+                        <Input
+                          type="date"
+                          value={classRecordForm.session_date}
+                          onChange={(e) => setClassRecordForm({...classRecordForm, session_date: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                      <Button 
+                        onClick={() => createClassRecordMutation.mutate(classRecordForm)}
+                        disabled={createClassRecordMutation.isPending}
+                        className="w-full"
+                      >
+                        {createClassRecordMutation.isPending ? 'Creating...' : 'Create Class Record'}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              <div className="grid gap-4">
+                {classRecords?.map((record) => (
+                  <Card key={record.id} className="dark:bg-gray-800">
+                    <CardHeader>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="dark:text-white">{record.topic_covered}</CardTitle>
+                          <CardDescription className="dark:text-gray-300">
+                            {new Date(record.session_date).toLocaleDateString()}
+                          </CardDescription>
+                        </div>
+                        <Badge variant="outline">
+                          {record.students_present}/{record.total_students} Present
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-4 text-sm mb-2">
+                        <div>
+                          <span className="font-medium dark:text-gray-300">Present:</span>
+                          <span className="ml-2 dark:text-white">{record.students_present}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium dark:text-gray-300">Absent:</span>
+                          <span className="ml-2 dark:text-white">{record.students_absent}</span>
+                        </div>
+                      </div>
+                      {record.description && (
+                        <p className="dark:text-gray-300 mb-2">{record.description}</p>
+                      )}
+                      {record.document_url && (
+                        <a 
+                          href={record.document_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:text-blue-700 text-sm"
+                        >
+                          View Document
+                        </a>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
           )}
 
-          {activeSection === 'class-sessions' && (
-            <Card className="dark:bg-gray-800">
-              <CardHeader>
-                <CardTitle className="dark:text-white">Class Sessions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-                  Class session management coming soon
-                </div>
-              </CardContent>
-            </Card>
+          {/* Work Details Section */}
+          {activeSection === 'work-details' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold dark:text-white">Work Details</h2>
+                <Dialog open={isCreateWorkDetailOpen} onOpenChange={setIsCreateWorkDetailOpen}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Work Detail
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="dark:bg-gray-800">
+                    <DialogHeader>
+                      <DialogTitle className="dark:text-white">Create Work Detail</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label className="dark:text-gray-300">Work Type</Label>
+                        <Input
+                          value={workDetailForm.work_type}
+                          onChange={(e) => setWorkDetailForm({...workDetailForm, work_type: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                          placeholder="e.g., Lecture, Lab, Meeting"
+                        />
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Duration</Label>
+                        <Input
+                          value={workDetailForm.duration}
+                          onChange={(e) => setWorkDetailForm({...workDetailForm, duration: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                          placeholder="e.g., 2 hours"
+                        />
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Slot Type</Label>
+                        <Select value={workDetailForm.slot_type} onValueChange={(value) => setWorkDetailForm({...workDetailForm, slot_type: value})}>
+                          <SelectTrigger className="dark:bg-gray-700 dark:text-white">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="morning">Morning</SelectItem>
+                            <SelectItem value="afternoon">Afternoon</SelectItem>
+                            <SelectItem value="evening">Evening</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Document URL</Label>
+                        <Input
+                          value={workDetailForm.document_url}
+                          onChange={(e) => setWorkDetailForm({...workDetailForm, document_url: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Description</Label>
+                        <Textarea
+                          value={workDetailForm.description}
+                          onChange={(e) => setWorkDetailForm({...workDetailForm, description: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Session Date</Label>
+                        <Input
+                          type="date"
+                          value={workDetailForm.session_date}
+                          onChange={(e) => setWorkDetailForm({...workDetailForm, session_date: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                      <Button 
+                        onClick={() => createWorkDetailMutation.mutate(workDetailForm)}
+                        disabled={createWorkDetailMutation.isPending}
+                        className="w-full"
+                      >
+                        {createWorkDetailMutation.isPending ? 'Creating...' : 'Create Work Detail'}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              <div className="grid gap-4">
+                {workDetails?.map((detail) => (
+                  <Card key={detail.id} className="dark:bg-gray-800">
+                    <CardHeader>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="dark:text-white">{detail.work_type}</CardTitle>
+                          <CardDescription className="dark:text-gray-300">
+                            {new Date(detail.session_date).toLocaleDateString()} • {detail.duration}
+                          </CardDescription>
+                        </div>
+                        <Badge variant="outline">
+                          {detail.slot_type}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="dark:text-gray-300 mb-2">{detail.description}</p>
+                      {detail.remarks && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                          <strong>Remarks:</strong> {detail.remarks}
+                        </p>
+                      )}
+                      {detail.document_url && (
+                        <a 
+                          href={detail.document_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:text-blue-700 text-sm"
+                        >
+                          View Document
+                        </a>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
           )}
 
+          {/* Attendance Section */}
           {activeSection === 'attendance' && (
             <Card className="dark:bg-gray-800">
               <CardHeader>

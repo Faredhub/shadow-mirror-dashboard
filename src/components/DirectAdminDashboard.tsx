@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -8,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Home, Users, BookOpen, Calendar, BarChart3, Moon, Sun, Plus, Edit, Trash2, Bell, UserPlus } from 'lucide-react';
+import { Home, Users, BookOpen, Calendar, BarChart3, Moon, Sun, Plus, Edit, Trash2, Bell, UserPlus, FileText, ClipboardList } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -81,27 +82,21 @@ const DirectAdminDashboard = () => {
   const { data: allFaculty, isLoading: facultyLoading } = useQuery({
     queryKey: ['all-faculty'],
     queryFn: async () => {
-      console.log('Fetching all faculty...');
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('role', 'faculty')
         .order('created_at', { ascending: false });
       
-      if (error) {
-        console.error('Error fetching faculty:', error);
-        throw error;
-      }
-      console.log('Faculty data:', data);
+      if (error) throw error;
       return data || [];
     },
-    refetchInterval: 2000, // Faster updates
+    refetchInterval: 2000,
   });
 
   const { data: allCourses } = useQuery({
     queryKey: ['all-courses'],
     queryFn: async () => {
-      console.log('Fetching all courses...');
       const { data, error } = await supabase
         .from('courses')
         .select(`
@@ -110,11 +105,7 @@ const DirectAdminDashboard = () => {
         `)
         .order('created_at', { ascending: false });
       
-      if (error) {
-        console.error('Error fetching courses:', error);
-        throw error;
-      }
-      console.log('Courses data:', data);
+      if (error) throw error;
       return data || [];
     },
     refetchInterval: 2000,
@@ -138,13 +129,29 @@ const DirectAdminDashboard = () => {
   });
 
   const { data: classRecords } = useQuery({
-    queryKey: ['all-class-records'],
+    queryKey: ['admin-class-records'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('class_sessions')
+        .from('class_records')
         .select(`
           *,
-          courses (name, code),
+          profiles (full_name)
+        `)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    },
+    refetchInterval: 2000,
+  });
+
+  const { data: workDetails } = useQuery({
+    queryKey: ['admin-work-details'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('work_details')
+        .select(`
+          *,
           profiles (full_name)
         `)
         .order('created_at', { ascending: false });
@@ -158,12 +165,8 @@ const DirectAdminDashboard = () => {
   // Mutations with proper error handling and cache invalidation
   const createFacultyMutation = useMutation({
     mutationFn: async (data: typeof facultyForm) => {
-      console.log('Creating faculty with data:', data);
-      
-      // Create a unique ID for the faculty member
       const facultyId = crypto.randomUUID();
       
-      // Insert directly into profiles table
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .insert({
@@ -177,31 +180,22 @@ const DirectAdminDashboard = () => {
         .select()
         .single();
 
-      if (profileError) {
-        console.error('Profile creation error:', profileError);
-        throw profileError;
-      }
-
-      console.log('Faculty created successfully:', profile);
+      if (profileError) throw profileError;
       return profile;
     },
     onSuccess: () => {
-      console.log('Faculty creation successful');
       toast({ title: "Success", description: "Faculty member created successfully" });
       setIsCreateFacultyOpen(false);
       setFacultyForm({ full_name: '', email: '', department: '', employee_id: '', password: '' });
-      // Invalidate and refetch
       queryClient.invalidateQueries({ queryKey: ['all-faculty'] });
     },
     onError: (error: any) => {
-      console.error('Faculty creation error:', error);
       toast({ title: "Error", description: error.message || "Failed to create faculty", variant: "destructive" });
     }
   });
 
   const updateFacultyMutation = useMutation({
     mutationFn: async (data: { id: string; updates: Partial<typeof facultyForm> }) => {
-      console.log('Updating faculty:', data);
       const { data: updatedProfile, error } = await supabase
         .from('profiles')
         .update(data.updates)
@@ -209,52 +203,40 @@ const DirectAdminDashboard = () => {
         .select()
         .single();
       
-      if (error) {
-        console.error('Faculty update error:', error);
-        throw error;
-      }
+      if (error) throw error;
       return updatedProfile;
     },
     onSuccess: () => {
-      console.log('Faculty update successful');
       toast({ title: "Success", description: "Faculty member updated successfully" });
       setIsEditFacultyOpen(false);
       setSelectedFaculty(null);
       queryClient.invalidateQueries({ queryKey: ['all-faculty'] });
     },
     onError: (error: any) => {
-      console.error('Faculty update error:', error);
       toast({ title: "Error", description: error.message || "Failed to update faculty", variant: "destructive" });
     }
   });
 
   const deleteFacultyMutation = useMutation({
     mutationFn: async (facultyId: string) => {
-      console.log('Deleting faculty:', facultyId);
       const { error } = await supabase
         .from('profiles')
         .delete()
         .eq('id', facultyId);
       
-      if (error) {
-        console.error('Faculty deletion error:', error);
-        throw error;
-      }
+      if (error) throw error;
     },
     onSuccess: () => {
-      console.log('Faculty deletion successful');
       toast({ title: "Success", description: "Faculty member deleted successfully" });
       queryClient.invalidateQueries({ queryKey: ['all-faculty'] });
     },
     onError: (error: any) => {
-      console.error('Faculty deletion error:', error);
       toast({ title: "Error", description: error.message || "Failed to delete faculty", variant: "destructive" });
     }
   });
 
   const createCourseMutation = useMutation({
     mutationFn: async (data: typeof courseForm) => {
-      console.log('Creating course:', data);
       const { data: course, error } = await supabase
         .from('courses')
         .insert({
@@ -268,14 +250,10 @@ const DirectAdminDashboard = () => {
         .select()
         .single();
 
-      if (error) {
-        console.error('Course creation error:', error);
-        throw error;
-      }
+      if (error) throw error;
       return course;
     },
     onSuccess: () => {
-      console.log('Course creation successful');
       toast({ title: "Success", description: "Course created successfully" });
       setIsCreateCourseOpen(false);
       setCourseForm({
@@ -289,14 +267,12 @@ const DirectAdminDashboard = () => {
       queryClient.invalidateQueries({ queryKey: ['all-courses'] });
     },
     onError: (error: any) => {
-      console.error('Course creation error:', error);
       toast({ title: "Error", description: error.message || "Failed to create course", variant: "destructive" });
     }
   });
 
   const updateCourseMutation = useMutation({
     mutationFn: async (data: { id: string; updates: Partial<typeof courseForm> }) => {
-      console.log('Updating course:', data);
       const { data: updatedCourse, error } = await supabase
         .from('courses')
         .update(data.updates)
@@ -304,53 +280,40 @@ const DirectAdminDashboard = () => {
         .select()
         .single();
       
-      if (error) {
-        console.error('Course update error:', error);
-        throw error;
-      }
+      if (error) throw error;
       return updatedCourse;
     },
     onSuccess: () => {
-      console.log('Course update successful');
       toast({ title: "Success", description: "Course updated successfully" });
       setIsEditCourseOpen(false);
       setSelectedCourse(null);
       queryClient.invalidateQueries({ queryKey: ['all-courses'] });
     },
     onError: (error: any) => {
-      console.error('Course update error:', error);
       toast({ title: "Error", description: error.message || "Failed to update course", variant: "destructive" });
     }
   });
 
   const deleteCourse = useMutation({
     mutationFn: async (courseId: string) => {
-      console.log('Deleting course:', courseId);
       const { error } = await supabase
         .from('courses')
         .delete()
         .eq('id', courseId);
       
-      if (error) {
-        console.error('Course deletion error:', error);
-        throw error;
-      }
+      if (error) throw error;
     },
     onSuccess: () => {
-      console.log('Course deletion successful');
       toast({ title: "Success", description: "Course deleted successfully" });
       queryClient.invalidateQueries({ queryKey: ['all-courses'] });
     },
     onError: (error: any) => {
-      console.error('Course deletion error:', error);
       toast({ title: "Error", description: error.message || "Failed to delete course", variant: "destructive" });
     }
   });
 
   const assignFacultyMutation = useMutation({
     mutationFn: async (data: { facultyId: string; assignment: typeof assignmentForm }) => {
-      console.log('Assigning faculty:', data);
-      // Store assignment details in work_activities table
       const { data: assignment, error } = await supabase
         .from('work_activities')
         .insert({
@@ -363,29 +326,22 @@ const DirectAdminDashboard = () => {
         .select()
         .single();
 
-      if (error) {
-        console.error('Assignment error:', error);
-        throw error;
-      }
+      if (error) throw error;
       return assignment;
     },
     onSuccess: () => {
-      console.log('Faculty assignment successful');
       toast({ title: "Success", description: "Faculty assignment created successfully" });
       setIsAssignmentOpen(false);
       setAssignmentForm({ branch: '', semester: '', subject: '', time_slot: '', total_students: '' });
       queryClient.invalidateQueries({ queryKey: ['all-work-activities'] });
     },
     onError: (error: any) => {
-      console.error('Assignment error:', error);
       toast({ title: "Error", description: error.message || "Failed to assign faculty", variant: "destructive" });
     }
   });
 
   const sendNotificationMutation = useMutation({
     mutationFn: async (data: typeof notificationForm) => {
-      console.log('Sending notification:', data);
-      // Store notification in work_activities table
       const { data: notification, error } = await supabase
         .from('work_activities')
         .insert({
@@ -398,34 +354,27 @@ const DirectAdminDashboard = () => {
         .select()
         .single();
 
-      if (error) {
-        console.error('Notification error:', error);
-        throw error;
-      }
+      if (error) throw error;
       return notification;
     },
     onSuccess: () => {
-      console.log('Notification sent successfully');
       toast({ title: "Success", description: "Notification sent successfully" });
       setIsNotificationOpen(false);
       setNotificationForm({ recipient_id: '', title: '', message: '' });
       queryClient.invalidateQueries({ queryKey: ['all-work-activities'] });
     },
     onError: (error: any) => {
-      console.error('Notification error:', error);
       toast({ title: "Error", description: error.message || "Failed to send notification", variant: "destructive" });
     }
   });
 
   // Event handlers
   const handleAssignFaculty = (faculty: any) => {
-    console.log('Assign faculty clicked:', faculty);
     setSelectedFaculty(faculty);
     setIsAssignmentOpen(true);
   };
 
   const handleSendNotification = (faculty: any) => {
-    console.log('Send notification clicked:', faculty);
     setSelectedFaculty(faculty);
     setNotificationForm({
       recipient_id: faculty.id,
@@ -436,7 +385,6 @@ const DirectAdminDashboard = () => {
   };
 
   const handleEditFaculty = (faculty: any) => {
-    console.log('Edit faculty clicked:', faculty);
     setSelectedFaculty(faculty);
     setFacultyForm({
       full_name: faculty.full_name,
@@ -449,7 +397,6 @@ const DirectAdminDashboard = () => {
   };
 
   const handleEditCourse = (course: any) => {
-    console.log('Edit course clicked:', course);
     setSelectedCourse(course);
     setCourseForm({
       name: course.name,
@@ -466,8 +413,9 @@ const DirectAdminDashboard = () => {
     { id: 'faculty-management', label: 'Faculty Management', icon: Users },
     { id: 'course-management', label: 'Course Management', icon: BookOpen },
     { id: 'work-activities', label: 'Work Activities', icon: BarChart3 },
-    { id: 'class-reports', label: 'Class Reports', icon: Calendar },
-    { id: 'attendance-reports', label: 'Attendance Reports', icon: BarChart3 },
+    { id: 'class-records', label: 'Class Records', icon: FileText },
+    { id: 'work-details', label: 'Work Details', icon: ClipboardList },
+    { id: 'attendance-reports', label: 'Attendance Reports', icon: Calendar },
   ];
 
   return (
@@ -1064,7 +1012,7 @@ const DirectAdminDashboard = () => {
             </DialogContent>
           </Dialog>
 
-          {/* Other sections remain the same */}
+          {/* Work Activities Section */}
           {activeSection === 'work-activities' && (
             <Card className="dark:bg-gray-800">
               <CardHeader>
@@ -1104,12 +1052,13 @@ const DirectAdminDashboard = () => {
             </Card>
           )}
 
-          {activeSection === 'class-reports' && (
+          {/* Class Records Section */}
+          {activeSection === 'class-records' && (
             <Card className="dark:bg-gray-800">
               <CardHeader>
-                <CardTitle className="dark:text-white">Class Reports</CardTitle>
+                <CardTitle className="dark:text-white">Class Records</CardTitle>
                 <CardDescription className="dark:text-gray-300">
-                  View all class sessions and reports
+                  View all class records submitted by faculty
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1117,20 +1066,22 @@ const DirectAdminDashboard = () => {
                   <TableHeader>
                     <TableRow className="dark:border-gray-700">
                       <TableHead className="dark:text-gray-300">Faculty</TableHead>
-                      <TableHead className="dark:text-gray-300">Course</TableHead>
+                      <TableHead className="dark:text-gray-300">Topic Covered</TableHead>
+                      <TableHead className="dark:text-gray-300">Present</TableHead>
+                      <TableHead className="dark:text-gray-300">Absent</TableHead>
+                      <TableHead className="dark:text-gray-300">Total</TableHead>
                       <TableHead className="dark:text-gray-300">Date</TableHead>
-                      <TableHead className="dark:text-gray-300">Time</TableHead>
-                      <TableHead className="dark:text-gray-300">Topic</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {classRecords?.map((record) => (
                       <TableRow key={record.id} className="dark:border-gray-700">
                         <TableCell className="font-medium dark:text-white">{record.profiles?.full_name}</TableCell>
-                        <TableCell className="dark:text-gray-300">{record.courses?.name}</TableCell>
-                        <TableCell className="dark:text-gray-300">{record.session_date}</TableCell>
-                        <TableCell className="dark:text-gray-300">{record.start_time}</TableCell>
-                        <TableCell className="dark:text-gray-300">{record.topic}</TableCell>
+                        <TableCell className="dark:text-gray-300">{record.topic_covered}</TableCell>
+                        <TableCell className="dark:text-gray-300">{record.students_present}</TableCell>
+                        <TableCell className="dark:text-gray-300">{record.students_absent}</TableCell>
+                        <TableCell className="dark:text-gray-300">{record.total_students}</TableCell>
+                        <TableCell className="dark:text-gray-300">{new Date(record.session_date).toLocaleDateString()}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1139,6 +1090,47 @@ const DirectAdminDashboard = () => {
             </Card>
           )}
 
+          {/* Work Details Section */}
+          {activeSection === 'work-details' && (
+            <Card className="dark:bg-gray-800">
+              <CardHeader>
+                <CardTitle className="dark:text-white">Work Details</CardTitle>
+                <CardDescription className="dark:text-gray-300">
+                  View all work details submitted by faculty
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="dark:border-gray-700">
+                      <TableHead className="dark:text-gray-300">Faculty</TableHead>
+                      <TableHead className="dark:text-gray-300">Work Type</TableHead>
+                      <TableHead className="dark:text-gray-300">Duration</TableHead>
+                      <TableHead className="dark:text-gray-300">Slot</TableHead>
+                      <TableHead className="dark:text-gray-300">Description</TableHead>
+                      <TableHead className="dark:text-gray-300">Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {workDetails?.map((detail) => (
+                      <TableRow key={detail.id} className="dark:border-gray-700">
+                        <TableCell className="font-medium dark:text-white">{detail.profiles?.full_name}</TableCell>
+                        <TableCell className="dark:text-gray-300">{detail.work_type}</TableCell>
+                        <TableCell className="dark:text-gray-300">{detail.duration}</TableCell>
+                        <TableCell className="dark:text-gray-300">
+                          <Badge variant="outline">{detail.slot_type}</Badge>
+                        </TableCell>
+                        <TableCell className="dark:text-gray-300 max-w-xs truncate">{detail.description}</TableCell>
+                        <TableCell className="dark:text-gray-300">{new Date(detail.session_date).toLocaleDateString()}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Attendance Reports Section */}
           {activeSection === 'attendance-reports' && (
             <Card className="dark:bg-gray-800">
               <CardHeader>
