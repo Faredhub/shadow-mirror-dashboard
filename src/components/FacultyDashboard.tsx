@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -49,16 +50,6 @@ const FacultyDashboard = () => {
   const [isCreateClassRecordOpen, setIsCreateClassRecordOpen] = useState(false);
   const [isCreateWorkDetailOpen, setIsCreateWorkDetailOpen] = useState(false);
 
-  // Work activity form state
-  const [workForm, setWorkForm] = useState({
-    title: '',
-    description: '',
-    activity_type: '',
-    hours_spent: 0,
-    start_date: '',
-    end_date: ''
-  });
-
   // Class record form state
   const [classRecordForm, setClassRecordForm] = useState({
     topic_covered: '',
@@ -95,7 +86,10 @@ const FacultyDashboard = () => {
         .eq('activity_type', 'assignment')
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching assignments:', error);
+        throw error;
+      }
       return data || [];
     },
     enabled: !!user?.id,
@@ -114,30 +108,14 @@ const FacultyDashboard = () => {
         .eq('activity_type', 'notification')
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching notifications:', error);
+        throw error;
+      }
       return data || [];
     },
     enabled: !!user?.id,
     refetchInterval: 2000,
-  });
-
-  const { data: workActivities } = useQuery({
-    queryKey: ['faculty-work-activities', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return [];
-      
-      const { data, error } = await supabase
-        .from('work_activities')
-        .select('*')
-        .eq('faculty_id', user.id)
-        .in('activity_type', ['teaching', 'research', 'admin', 'other'])
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!user?.id,
-    refetchInterval: 3000,
   });
 
   const { data: classRecords } = useQuery({
@@ -153,7 +131,7 @@ const FacultyDashboard = () => {
       
       if (error) {
         console.error('Error fetching class records:', error);
-        return [];
+        throw error;
       }
       return data || [];
     },
@@ -174,7 +152,7 @@ const FacultyDashboard = () => {
       
       if (error) {
         console.error('Error fetching work details:', error);
-        return [];
+        throw error;
       }
       return data || [];
     },
@@ -189,8 +167,6 @@ const FacultyDashboard = () => {
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}.${fileExt}`;
     const filePath = `${user?.id}/${fileName}`;
-
-    console.log('Uploading file to bucket:', bucket, 'path:', filePath);
 
     const { data, error } = await supabase.storage
       .from(bucket)
@@ -208,82 +184,49 @@ const FacultyDashboard = () => {
     return publicUrl;
   };
 
-  // Mutations
-  const createWorkActivityMutation = useMutation({
-    mutationFn: async (data: typeof workForm) => {
-      if (!user?.id) throw new Error('User not authenticated');
-      
-      const { data: activity, error } = await supabase
-        .from('work_activities')
-        .insert({
-          faculty_id: user.id,
-          title: data.title,
-          description: data.description,
-          activity_type: data.activity_type,
-          hours_spent: data.hours_spent,
-          start_date: data.start_date,
-          end_date: data.end_date,
-          status: 'completed'
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      return activity;
-    },
-    onSuccess: () => {
-      toast({ title: "Success", description: "Work activity created successfully" });
-      setIsCreateWorkOpen(false);
-      setWorkForm({
-        title: '',
-        description: '',
-        activity_type: '',
-        hours_spent: 0,
-        start_date: '',
-        end_date: ''
-      });
-      queryClient.invalidateQueries({ queryKey: ['faculty-work-activities'] });
-    },
-    onError: (error: any) => {
-      console.error('Work activity creation error:', error);
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    }
-  });
-
   const createClassRecordMutation = useMutation({
     mutationFn: async (data: typeof classRecordForm) => {
       if (!user?.id) throw new Error('User not authenticated');
+      
+      console.log('Creating class record with data:', data);
       
       let fileUrl = null;
       if (data.uploaded_file) {
         try {
           fileUrl = await uploadFile(data.uploaded_file, 'class-documents');
+          console.log('File uploaded successfully:', fileUrl);
         } catch (error) {
           console.error('File upload error:', error);
           // Continue without file if upload fails
         }
       }
       
+      const insertData = {
+        faculty_id: user.id,
+        topic_covered: data.topic_covered,
+        students_present: data.students_present,
+        students_absent: data.students_absent,
+        total_students: data.total_students,
+        document_url: fileUrl,
+        description: data.description || null,
+        remarks: data.remarks || null,
+        session_date: data.session_date
+      };
+      
+      console.log('Inserting class record:', insertData);
+      
       const { data: record, error } = await supabase
         .from('class_records')
-        .insert({
-          faculty_id: user.id,
-          topic_covered: data.topic_covered,
-          students_present: data.students_present,
-          students_absent: data.students_absent,
-          total_students: data.total_students,
-          document_url: fileUrl,
-          description: data.description || null,
-          remarks: data.remarks || null,
-          session_date: data.session_date
-        })
+        .insert(insertData)
         .select()
         .single();
 
       if (error) {
-        console.error('Class record creation error:', error);
+        console.error('Class record insertion error:', error);
         throw error;
       }
+      
+      console.log('Class record created successfully:', record);
       return record;
     },
     onSuccess: () => {
@@ -300,9 +243,10 @@ const FacultyDashboard = () => {
         session_date: new Date().toISOString().split('T')[0]
       });
       queryClient.invalidateQueries({ queryKey: ['faculty-class-records'] });
+      queryClient.invalidateQueries({ queryKey: ['all-class-records'] });
     },
     onError: (error: any) => {
-      console.error('Class record creation error:', error);
+      console.error('Class record mutation error:', error);
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   });
@@ -311,35 +255,44 @@ const FacultyDashboard = () => {
     mutationFn: async (data: typeof workDetailForm) => {
       if (!user?.id) throw new Error('User not authenticated');
       
+      console.log('Creating work detail with data:', data);
+      
       let fileUrl = null;
       if (data.uploaded_file) {
         try {
           fileUrl = await uploadFile(data.uploaded_file, 'work-documents');
+          console.log('File uploaded successfully:', fileUrl);
         } catch (error) {
           console.error('File upload error:', error);
           // Continue without file if upload fails
         }
       }
       
+      const insertData = {
+        faculty_id: user.id,
+        work_type: data.work_type,
+        duration: data.duration,
+        document_url: fileUrl,
+        description: data.description,
+        remarks: data.remarks || null,
+        slot_type: data.slot_type,
+        session_date: data.session_date
+      };
+      
+      console.log('Inserting work detail:', insertData);
+      
       const { data: detail, error } = await supabase
         .from('work_details')
-        .insert({
-          faculty_id: user.id,
-          work_type: data.work_type,
-          duration: data.duration,
-          document_url: fileUrl,
-          description: data.description,
-          remarks: data.remarks || null,
-          slot_type: data.slot_type,
-          session_date: data.session_date
-        })
+        .insert(insertData)
         .select()
         .single();
 
       if (error) {
-        console.error('Work detail creation error:', error);
+        console.error('Work detail insertion error:', error);
         throw error;
       }
+      
+      console.log('Work detail created successfully:', detail);
       return detail;
     },
     onSuccess: () => {
@@ -355,9 +308,10 @@ const FacultyDashboard = () => {
         session_date: new Date().toISOString().split('T')[0]
       });
       queryClient.invalidateQueries({ queryKey: ['faculty-work-details'] });
+      queryClient.invalidateQueries({ queryKey: ['all-work-details'] });
     },
     onError: (error: any) => {
-      console.error('Work detail creation error:', error);
+      console.error('Work detail mutation error:', error);
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   });
@@ -365,7 +319,6 @@ const FacultyDashboard = () => {
   const sidebarItems = [
     { id: 'assignments', label: 'My Assignments', icon: BookmarkPlus },
     { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'work-activities', label: 'Work Activities', icon: BarChart3 },
     { id: 'class-records', label: 'Class Records', icon: FileText },
     { id: 'work-details', label: 'Work Details', icon: ClipboardList },
     { id: 'attendance', label: 'Attendance', icon: UserCheck },
@@ -377,6 +330,7 @@ const FacultyDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+      {/* Sidebar */}
       <div className="w-64 bg-white dark:bg-gray-800 shadow-lg">
         <div className="p-4 border-b dark:border-gray-700">
           <div className="flex items-center space-x-2">
@@ -415,6 +369,7 @@ const FacultyDashboard = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
+        {/* Header */}
         <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700">
           <div className="px-6 py-4 flex justify-between items-center">
             <h1 className="text-xl font-semibold dark:text-white">
@@ -454,7 +409,6 @@ const FacultyDashboard = () => {
 
         {/* Content Area */}
         <main className="flex-1 p-6">
-
           {/* Assignments Section */}
           {activeSection === 'assignments' && (
             <div className="space-y-6">
@@ -541,19 +495,17 @@ const FacultyDashboard = () => {
                             <div>
                               <CardTitle className="dark:text-white">{title}</CardTitle>
                               <CardDescription className="dark:text-gray-300">
-                                {new Date(notification.created_at).toLocaleDateString()}
+                                Received on {new Date(notification.created_at).toLocaleDateString()}
                               </CardDescription>
                             </div>
-                            <Badge variant="outline">New</Badge>
+                            <Badge variant="outline">
+                              {notification.status}
+                            </Badge>
                           </div>
                         </CardHeader>
-                        {notification.description && (
-                          <CardContent>
-                            <p className="text-sm text-gray-600 dark:text-gray-300">
-                              {notification.description}
-                            </p>
-                          </CardContent>
-                        )}
+                        <CardContent>
+                          <p className="text-sm dark:text-gray-300">{notification.description}</p>
+                        </CardContent>
                       </Card>
                     );
                   })
@@ -562,138 +514,6 @@ const FacultyDashboard = () => {
                     <CardContent className="text-center py-8">
                       <Bell className="h-12 w-12 mx-auto text-gray-400 mb-4" />
                       <p className="text-gray-500 dark:text-gray-400">No notifications yet</p>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Work Activities Section */}
-          {activeSection === 'work-activities' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold dark:text-white">Work Activities</h2>
-                <Dialog open={isCreateWorkOpen} onOpenChange={setIsCreateWorkOpen}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Work Activity
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="dark:bg-gray-800">
-                    <DialogHeader>
-                      <DialogTitle className="dark:text-white">Create Work Activity</DialogTitle>
-                      <DialogDescription className="dark:text-gray-300">
-                        Add a new work activity record
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div>
-                        <Label className="dark:text-gray-300">Title</Label>
-                        <Input
-                          value={workForm.title}
-                          onChange={(e) => setWorkForm({...workForm, title: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
-                          placeholder="Work activity title"
-                        />
-                      </div>
-                      <div>
-                        <Label className="dark:text-gray-300">Activity Type</Label>
-                        <Select value={workForm.activity_type} onValueChange={(value) => setWorkForm({...workForm, activity_type: value})}>
-                          <SelectTrigger className="dark:bg-gray-700 dark:text-white">
-                            <SelectValue placeholder="Select activity type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="teaching">Teaching</SelectItem>
-                            <SelectItem value="research">Research</SelectItem>
-                            <SelectItem value="admin">Administrative</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label className="dark:text-gray-300">Description</Label>
-                        <Textarea
-                          value={workForm.description}
-                          onChange={(e) => setWorkForm({...workForm, description: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
-                          placeholder="Activity description"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label className="dark:text-gray-300">Start Date</Label>
-                          <Input
-                            type="date"
-                            value={workForm.start_date}
-                            onChange={(e) => setWorkForm({...workForm, start_date: e.target.value})}
-                            className="dark:bg-gray-700 dark:text-white"
-                          />
-                        </div>
-                        <div>
-                          <Label className="dark:text-gray-300">End Date</Label>
-                          <Input
-                            type="date"
-                            value={workForm.end_date}
-                            onChange={(e) => setWorkForm({...workForm, end_date: e.target.value})}
-                            className="dark:bg-gray-700 dark:text-white"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <Label className="dark:text-gray-300">Hours Spent</Label>
-                        <Input
-                          type="number"
-                          value={workForm.hours_spent}
-                          onChange={(e) => setWorkForm({...workForm, hours_spent: parseInt(e.target.value) || 0})}
-                          className="dark:bg-gray-700 dark:text-white"
-                        />
-                      </div>
-                      <Button 
-                        onClick={() => createWorkActivityMutation.mutate(workForm)}
-                        disabled={createWorkActivityMutation.isPending}
-                        className="w-full"
-                      >
-                        {createWorkActivityMutation.isPending ? 'Creating...' : 'Create Activity'}
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-
-              <div className="grid gap-4">
-                {workActivities && workActivities.length > 0 ? (
-                  workActivities.map((activity) => (
-                    <Card key={activity.id} className="dark:bg-gray-800">
-                      <CardHeader>
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <CardTitle className="dark:text-white">{activity.title}</CardTitle>
-                            <CardDescription className="dark:text-gray-300">
-                              {activity.activity_type} • {activity.hours_spent} hours
-                            </CardDescription>
-                          </div>
-                          <Badge variant="outline">{activity.status}</Badge>
-                        </div>
-                      </CardHeader>
-                      {activity.description && (
-                        <CardContent>
-                          <p className="text-sm text-gray-600 dark:text-gray-300">
-                            {activity.description}
-                          </p>
-                          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                            {activity.start_date} to {activity.end_date}
-                          </div>
-                        </CardContent>
-                      )}
-                    </Card>
-                  ))
-                ) : (
-                  <Card className="dark:bg-gray-800">
-                    <CardContent className="text-center py-8">
-                      <BarChart3 className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                      <p className="text-gray-500 dark:text-gray-400">No work activities yet</p>
                     </CardContent>
                   </Card>
                 )}
@@ -722,85 +542,89 @@ const FacultyDashboard = () => {
                     </DialogHeader>
                     <div className="space-y-4 max-h-96 overflow-y-auto">
                       <div>
-                        <Label className="dark:text-gray-300">Topic Covered</Label>
+                        <Label htmlFor="topic_covered" className="dark:text-white">Topic Covered</Label>
                         <Input
+                          id="topic_covered"
                           value={classRecordForm.topic_covered}
-                          onChange={(e) => setClassRecordForm({...classRecordForm, topic_covered: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
-                          placeholder="Topic covered in class"
+                          onChange={(e) => setClassRecordForm(prev => ({ ...prev, topic_covered: e.target.value }))}
+                          placeholder="Enter the topic covered in class"
+                          className="dark:bg-gray-700 dark:border-gray-600"
                         />
                       </div>
                       <div className="grid grid-cols-3 gap-4">
                         <div>
-                          <Label className="dark:text-gray-300">Students Present</Label>
+                          <Label htmlFor="students_present" className="dark:text-white">Students Present</Label>
                           <Input
+                            id="students_present"
                             type="number"
                             value={classRecordForm.students_present}
-                            onChange={(e) => setClassRecordForm({...classRecordForm, students_present: parseInt(e.target.value) || 0})}
-                            className="dark:bg-gray-700 dark:text-white"
+                            onChange={(e) => setClassRecordForm(prev => ({ ...prev, students_present: parseInt(e.target.value) || 0 }))}
+                            className="dark:bg-gray-700 dark:border-gray-600"
                           />
                         </div>
                         <div>
-                          <Label className="dark:text-gray-300">Students Absent</Label>
+                          <Label htmlFor="students_absent" className="dark:text-white">Students Absent</Label>
                           <Input
+                            id="students_absent"
                             type="number"
                             value={classRecordForm.students_absent}
-                            onChange={(e) => setClassRecordForm({...classRecordForm, students_absent: parseInt(e.target.value) || 0})}
-                            className="dark:bg-gray-700 dark:text-white"
+                            onChange={(e) => setClassRecordForm(prev => ({ ...prev, students_absent: parseInt(e.target.value) || 0 }))}
+                            className="dark:bg-gray-700 dark:border-gray-600"
                           />
                         </div>
                         <div>
-                          <Label className="dark:text-gray-300">Total Students</Label>
+                          <Label htmlFor="total_students" className="dark:text-white">Total Students</Label>
                           <Input
+                            id="total_students"
                             type="number"
                             value={classRecordForm.total_students}
-                            onChange={(e) => setClassRecordForm({...classRecordForm, total_students: parseInt(e.target.value) || 0})}
-                            className="dark:bg-gray-700 dark:text-white"
+                            onChange={(e) => setClassRecordForm(prev => ({ ...prev, total_students: parseInt(e.target.value) || 0 }))}
+                            className="dark:bg-gray-700 dark:border-gray-600"
                           />
                         </div>
                       </div>
                       <div>
-                        <Label className="dark:text-gray-300">Session Date</Label>
+                        <Label htmlFor="session_date" className="dark:text-white">Session Date</Label>
                         <Input
+                          id="session_date"
                           type="date"
                           value={classRecordForm.session_date}
-                          onChange={(e) => setClassRecordForm({...classRecordForm, session_date: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
+                          onChange={(e) => setClassRecordForm(prev => ({ ...prev, session_date: e.target.value }))}
+                          className="dark:bg-gray-700 dark:border-gray-600"
                         />
                       </div>
                       <div>
-                        <Label className="dark:text-gray-300">Upload File (Optional)</Label>
-                        <Input
-                          type="file"
-                          onChange={(e) => setClassRecordForm({...classRecordForm, uploaded_file: e.target.files?.[0] || null})}
-                          className="dark:bg-gray-700 dark:text-white"
-                          accept="image/*,.pdf,.doc,.docx"
-                        />
-                        {classRecordForm.uploaded_file && (
-                          <p className="text-sm text-green-600 mt-1">File selected: {classRecordForm.uploaded_file.name}</p>
-                        )}
-                      </div>
-                      <div>
-                        <Label className="dark:text-gray-300">Description</Label>
+                        <Label htmlFor="description" className="dark:text-white">Description (Optional)</Label>
                         <Textarea
+                          id="description"
                           value={classRecordForm.description}
-                          onChange={(e) => setClassRecordForm({...classRecordForm, description: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
-                          placeholder="Class description"
+                          onChange={(e) => setClassRecordForm(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="Additional details about the class"
+                          className="dark:bg-gray-700 dark:border-gray-600"
                         />
                       </div>
                       <div>
-                        <Label className="dark:text-gray-300">Remarks</Label>
+                        <Label htmlFor="remarks" className="dark:text-white">Remarks (Optional)</Label>
                         <Textarea
+                          id="remarks"
                           value={classRecordForm.remarks}
-                          onChange={(e) => setClassRecordForm({...classRecordForm, remarks: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
+                          onChange={(e) => setClassRecordForm(prev => ({ ...prev, remarks: e.target.value }))}
                           placeholder="Any additional remarks"
+                          className="dark:bg-gray-700 dark:border-gray-600"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="class_document" className="dark:text-white">Upload Document (Optional)</Label>
+                        <Input
+                          id="class_document"
+                          type="file"
+                          onChange={(e) => setClassRecordForm(prev => ({ ...prev, uploaded_file: e.target.files?.[0] || null }))}
+                          className="dark:bg-gray-700 dark:border-gray-600"
                         />
                       </div>
                       <Button 
                         onClick={() => createClassRecordMutation.mutate(classRecordForm)}
-                        disabled={createClassRecordMutation.isPending}
+                        disabled={createClassRecordMutation.isPending || !classRecordForm.topic_covered}
                         className="w-full"
                       >
                         {createClassRecordMutation.isPending ? 'Creating...' : 'Create Class Record'}
@@ -819,34 +643,33 @@ const FacultyDashboard = () => {
                           <div>
                             <CardTitle className="dark:text-white">{record.topic_covered}</CardTitle>
                             <CardDescription className="dark:text-gray-300">
-                              {new Date(record.session_date).toLocaleDateString()} • {record.students_present}/{record.total_students} present
+                              {new Date(record.session_date).toLocaleDateString()}
                             </CardDescription>
                           </div>
-                          <Badge variant="outline">Class Record</Badge>
+                          <Badge variant="outline">
+                            {record.students_present}/{record.total_students} Present
+                          </Badge>
                         </div>
                       </CardHeader>
                       <CardContent>
-                        {record.description && (
-                          <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
-                            {record.description}
-                          </p>
-                        )}
-                        {record.document_url && (
-                          <a 
-                            href={record.document_url} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-blue-500 hover:text-blue-700 text-sm flex items-center"
-                          >
-                            <Upload className="h-4 w-4 mr-1" />
-                            View attached file
-                          </a>
-                        )}
-                        {record.remarks && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                            Remarks: {record.remarks}
-                          </p>
-                        )}
+                        <div className="space-y-2">
+                          {record.description && (
+                            <p className="text-sm dark:text-gray-300">{record.description}</p>
+                          )}
+                          {record.document_url && (
+                            <div>
+                              <a 
+                                href={record.document_url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-blue-500 hover:text-blue-700 text-sm flex items-center"
+                              >
+                                <FileText className="h-4 w-4 mr-1" />
+                                View Document
+                              </a>
+                            </div>
+                          )}
+                        </div>
                       </CardContent>
                     </Card>
                   ))
@@ -878,85 +701,94 @@ const FacultyDashboard = () => {
                     <DialogHeader>
                       <DialogTitle className="dark:text-white">Create Work Detail</DialogTitle>
                       <DialogDescription className="dark:text-gray-300">
-                        Record details about your work activity
+                        Record details about your work activities
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 max-h-96 overflow-y-auto">
                       <div>
-                        <Label className="dark:text-gray-300">Work Type</Label>
-                        <Input
-                          value={workDetailForm.work_type}
-                          onChange={(e) => setWorkDetailForm({...workDetailForm, work_type: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
-                          placeholder="Type of work performed"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label className="dark:text-gray-300">Duration</Label>
-                          <Input
-                            value={workDetailForm.duration}
-                            onChange={(e) => setWorkDetailForm({...workDetailForm, duration: e.target.value})}
-                            className="dark:bg-gray-700 dark:text-white"
-                            placeholder="e.g., 2 hours"
-                          />
-                        </div>
-                        <div>
-                          <Label className="dark:text-gray-300">Slot Type</Label>
-                          <Select value={workDetailForm.slot_type} onValueChange={(value) => setWorkDetailForm({...workDetailForm, slot_type: value})}>
-                            <SelectTrigger className="dark:bg-gray-700 dark:text-white">
-                              <SelectValue placeholder="Select slot" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="morning">Morning</SelectItem>
-                              <SelectItem value="afternoon">Afternoon</SelectItem>
-                              <SelectItem value="evening">Evening</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
+                        <Label htmlFor="work_type" className="dark:text-white">Work Type</Label>
+                        <Select value={workDetailForm.work_type} onValueChange={(value) => 
+                          setWorkDetailForm(prev => ({ ...prev, work_type: value }))
+                        }>
+                          <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600">
+                            <SelectValue placeholder="Select work type" />
+                          </SelectTrigger>
+                          <SelectContent className="dark:bg-gray-700">
+                            <SelectItem value="teaching">Teaching</SelectItem>
+                            <SelectItem value="research">Research</SelectItem>
+                            <SelectItem value="administrative">Administrative</SelectItem>
+                            <SelectItem value="evaluation">Evaluation</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div>
-                        <Label className="dark:text-gray-300">Session Date</Label>
+                        <Label htmlFor="duration" className="dark:text-white">Duration</Label>
                         <Input
+                          id="duration"
+                          value={workDetailForm.duration}
+                          onChange={(e) => setWorkDetailForm(prev => ({ ...prev, duration: e.target.value }))}
+                          placeholder="e.g., 2 hours, 1 day"
+                          className="dark:bg-gray-700 dark:border-gray-600"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="slot_type" className="dark:text-white">Time Slot</Label>
+                        <Select value={workDetailForm.slot_type} onValueChange={(value) => 
+                          setWorkDetailForm(prev => ({ ...prev, slot_type: value }))
+                        }>
+                          <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600">
+                            <SelectValue placeholder="Select time slot" />
+                          </SelectTrigger>
+                          <SelectContent className="dark:bg-gray-700">
+                            <SelectItem value="morning">Morning</SelectItem>
+                            <SelectItem value="afternoon">Afternoon</SelectItem>
+                            <SelectItem value="evening">Evening</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="work_date" className="dark:text-white">Work Date</Label>
+                        <Input
+                          id="work_date"
                           type="date"
                           value={workDetailForm.session_date}
-                          onChange={(e) => setWorkDetailForm({...workDetailForm, session_date: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
+                          onChange={(e) => setWorkDetailForm(prev => ({ ...prev, session_date: e.target.value }))}
+                          className="dark:bg-gray-700 dark:border-gray-600"
                         />
                       </div>
                       <div>
-                        <Label className="dark:text-gray-300">Upload File (Optional)</Label>
-                        <Input
-                          type="file"
-                          onChange={(e) => setWorkDetailForm({...workDetailForm, uploaded_file: e.target.files?.[0] || null})}
-                          className="dark:bg-gray-700 dark:text-white"
-                          accept="image/*,.pdf,.doc,.docx"
-                        />
-                        {workDetailForm.uploaded_file && (
-                          <p className="text-sm text-green-600 mt-1">File selected: {workDetailForm.uploaded_file.name}</p>
-                        )}
-                      </div>
-                      <div>
-                        <Label className="dark:text-gray-300">Description</Label>
+                        <Label htmlFor="work_description" className="dark:text-white">Description</Label>
                         <Textarea
+                          id="work_description"
                           value={workDetailForm.description}
-                          onChange={(e) => setWorkDetailForm({...workDetailForm, description: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
-                          placeholder="Work description"
+                          onChange={(e) => setWorkDetailForm(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="Describe the work performed"
+                          className="dark:bg-gray-700 dark:border-gray-600"
                         />
                       </div>
                       <div>
-                        <Label className="dark:text-gray-300">Remarks</Label>
+                        <Label htmlFor="work_remarks" className="dark:text-white">Remarks (Optional)</Label>
                         <Textarea
+                          id="work_remarks"
                           value={workDetailForm.remarks}
-                          onChange={(e) => setWorkDetailForm({...workDetailForm, remarks: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
+                          onChange={(e) => setWorkDetailForm(prev => ({ ...prev, remarks: e.target.value }))}
                           placeholder="Any additional remarks"
+                          className="dark:bg-gray-700 dark:border-gray-600"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="work_document" className="dark:text-white">Upload Document (Optional)</Label>
+                        <Input
+                          id="work_document"
+                          type="file"
+                          onChange={(e) => setWorkDetailForm(prev => ({ ...prev, uploaded_file: e.target.files?.[0] || null }))}
+                          className="dark:bg-gray-700 dark:border-gray-600"
                         />
                       </div>
                       <Button 
                         onClick={() => createWorkDetailMutation.mutate(workDetailForm)}
-                        disabled={createWorkDetailMutation.isPending}
+                        disabled={createWorkDetailMutation.isPending || !workDetailForm.work_type || !workDetailForm.description}
                         className="w-full"
                       >
                         {createWorkDetailMutation.isPending ? 'Creating...' : 'Create Work Detail'}
@@ -973,34 +805,36 @@ const FacultyDashboard = () => {
                       <CardHeader>
                         <div className="flex justify-between items-start">
                           <div>
-                            <CardTitle className="dark:text-white">{detail.work_type}</CardTitle>
+                            <CardTitle className="dark:text-white capitalize">{detail.work_type}</CardTitle>
                             <CardDescription className="dark:text-gray-300">
-                              {new Date(detail.session_date).toLocaleDateString()} • {detail.duration} • {detail.slot_type}
+                              {new Date(detail.session_date).toLocaleDateString()} - {detail.slot_type}
                             </CardDescription>
                           </div>
-                          <Badge variant="outline">Work Detail</Badge>
+                          <Badge variant="outline">
+                            {detail.duration}
+                          </Badge>
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
-                          {detail.description}
-                        </p>
-                        {detail.document_url && (
-                          <a 
-                            href={detail.document_url} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-blue-500 hover:text-blue-700 text-sm flex items-center"
-                          >
-                            <Upload className="h-4 w-4 mr-1" />
-                            View attached file
-                          </a>
-                        )}
-                        {detail.remarks && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                            Remarks: {detail.remarks}
-                          </p>
-                        )}
+                        <div className="space-y-2">
+                          <p className="text-sm dark:text-gray-300">{detail.description}</p>
+                          {detail.remarks && (
+                            <p className="text-sm text-gray-600 dark:text-gray-400 italic">{detail.remarks}</p>
+                          )}
+                          {detail.document_url && (
+                            <div>
+                              <a 
+                                href={detail.document_url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-blue-500 hover:text-blue-700 text-sm flex items-center"
+                              >
+                                <FileText className="h-4 w-4 mr-1" />
+                                View Document
+                              </a>
+                            </div>
+                          )}
+                        </div>
                       </CardContent>
                     </Card>
                   ))
@@ -1025,7 +859,7 @@ const FacultyDashboard = () => {
               <Card className="dark:bg-gray-800">
                 <CardContent className="text-center py-8">
                   <UserCheck className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <p className="text-gray-500 dark:text-gray-400">Attendance feature coming soon</p>
+                  <p className="text-gray-500 dark:text-gray-400">Attendance features coming soon</p>
                 </CardContent>
               </Card>
             </div>
