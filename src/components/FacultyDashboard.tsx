@@ -890,7 +890,7 @@ const FacultyDashboard = () => {
                         </div>
                         {workDetailForm.uploaded_file && (
                           <p className="text-sm text-green-600 mt-1">File selected: {workDetailForm.uploaded_file.name}</p>
-                        </p>
+                        )}
                       </div>
                       <div>
                         <Label className="dark:text-gray-300">Description</Label>
