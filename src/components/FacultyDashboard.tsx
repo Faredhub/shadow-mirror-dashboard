@@ -26,7 +26,8 @@ import {
   UserCheck,
   BookmarkPlus,
   FileText,
-  ClipboardList
+  ClipboardList,
+  Upload
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useToast } from '@/hooks/use-toast';
@@ -65,7 +66,7 @@ const FacultyDashboard = () => {
     students_present: 0,
     students_absent: 0,
     total_students: 0,
-    document_url: '',
+    uploaded_file: null as File | null,
     description: '',
     remarks: '',
     session_date: new Date().toISOString().split('T')[0]
@@ -75,7 +76,7 @@ const FacultyDashboard = () => {
   const [workDetailForm, setWorkDetailForm] = useState({
     work_type: '',
     duration: '',
-    document_url: '',
+    uploaded_file: null as File | null,
     description: '',
     remarks: '',
     slot_type: 'morning',
@@ -176,6 +177,27 @@ const FacultyDashboard = () => {
     refetchInterval: 3000,
   });
 
+  // File upload function
+  const uploadFile = async (file: File, bucket: string) => {
+    if (!file) return null;
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}.${fileExt}`;
+    const filePath = `${user?.id}/${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(filePath, file);
+
+    if (error) throw error;
+
+    const { data: { publicUrl } } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(filePath);
+
+    return publicUrl;
+  };
+
   // Mutations
   const createWorkActivityMutation = useMutation({
     mutationFn: async (data: typeof workForm) => {
@@ -221,6 +243,16 @@ const FacultyDashboard = () => {
     mutationFn: async (data: typeof classRecordForm) => {
       if (!user?.id) throw new Error('User not authenticated');
       
+      let fileUrl = null;
+      if (data.uploaded_file) {
+        try {
+          fileUrl = await uploadFile(data.uploaded_file, 'class-documents');
+        } catch (error) {
+          console.error('File upload error:', error);
+          // Continue without file if upload fails
+        }
+      }
+      
       const { data: record, error } = await supabase
         .from('class_records')
         .insert({
@@ -229,7 +261,7 @@ const FacultyDashboard = () => {
           students_present: data.students_present,
           students_absent: data.students_absent,
           total_students: data.total_students,
-          document_url: data.document_url || null,
+          document_url: fileUrl,
           description: data.description || null,
           remarks: data.remarks || null,
           session_date: data.session_date
@@ -248,7 +280,7 @@ const FacultyDashboard = () => {
         students_present: 0,
         students_absent: 0,
         total_students: 0,
-        document_url: '',
+        uploaded_file: null,
         description: '',
         remarks: '',
         session_date: new Date().toISOString().split('T')[0]
@@ -264,13 +296,23 @@ const FacultyDashboard = () => {
     mutationFn: async (data: typeof workDetailForm) => {
       if (!user?.id) throw new Error('User not authenticated');
       
+      let fileUrl = null;
+      if (data.uploaded_file) {
+        try {
+          fileUrl = await uploadFile(data.uploaded_file, 'work-documents');
+        } catch (error) {
+          console.error('File upload error:', error);
+          // Continue without file if upload fails
+        }
+      }
+      
       const { data: detail, error } = await supabase
         .from('work_details')
         .insert({
           faculty_id: user.id,
           work_type: data.work_type,
           duration: data.duration,
-          document_url: data.document_url || null,
+          document_url: fileUrl,
           description: data.description,
           remarks: data.remarks || null,
           slot_type: data.slot_type,
@@ -288,7 +330,7 @@ const FacultyDashboard = () => {
       setWorkDetailForm({
         work_type: '',
         duration: '',
-        document_url: '',
+        uploaded_file: null,
         description: '',
         remarks: '',
         slot_type: 'morning',
@@ -639,7 +681,7 @@ const FacultyDashboard = () => {
                       Add Class Record
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="dark:bg-gray-800">
+                  <DialogContent className="dark:bg-gray-800 max-w-2xl">
                     <DialogHeader>
                       <DialogTitle className="dark:text-white">Create Class Record</DialogTitle>
                     </DialogHeader>
@@ -682,13 +724,19 @@ const FacultyDashboard = () => {
                         </div>
                       </div>
                       <div>
-                        <Label className="dark:text-gray-300">Document URL</Label>
-                        <Input
-                          value={classRecordForm.document_url}
-                          onChange={(e) => setClassRecordForm({...classRecordForm, document_url: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
-                          placeholder="Optional"
-                        />
+                        <Label className="dark:text-gray-300">Upload Document/Photo (Optional)</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="file"
+                            accept="image/*,.pdf,.doc,.docx,.txt"
+                            onChange={(e) => setClassRecordForm({...classRecordForm, uploaded_file: e.target.files?.[0] || null})}
+                            className="dark:bg-gray-700 dark:text-white"
+                          />
+                          <Upload className="h-4 w-4 text-gray-400" />
+                        </div>
+                        {classRecordForm.uploaded_file && (
+                          <p className="text-sm text-green-600 mt-1">File selected: {classRecordForm.uploaded_file.name}</p>
+                        )}
                       </div>
                       <div>
                         <Label className="dark:text-gray-300">Description</Label>
@@ -696,6 +744,15 @@ const FacultyDashboard = () => {
                           value={classRecordForm.description}
                           onChange={(e) => setClassRecordForm({...classRecordForm, description: e.target.value})}
                           className="dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Remarks</Label>
+                        <Textarea
+                          value={classRecordForm.remarks}
+                          onChange={(e) => setClassRecordForm({...classRecordForm, remarks: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                          placeholder="Optional"
                         />
                       </div>
                       <div>
@@ -749,14 +806,20 @@ const FacultyDashboard = () => {
                       {record.description && (
                         <p className="dark:text-gray-300 mb-2">{record.description}</p>
                       )}
+                      {record.remarks && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                          <strong>Remarks:</strong> {record.remarks}
+                        </p>
+                      )}
                       {record.document_url && (
                         <a 
                           href={record.document_url} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="text-blue-500 hover:text-blue-700 text-sm"
+                          className="text-blue-500 hover:text-blue-700 text-sm inline-flex items-center gap-1"
                         >
-                          View Document
+                          <FileText className="h-3 w-3" />
+                          View Uploaded File
                         </a>
                       )}
                     </CardContent>
@@ -778,7 +841,7 @@ const FacultyDashboard = () => {
                       Add Work Detail
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="dark:bg-gray-800">
+                  <DialogContent className="dark:bg-gray-800 max-w-2xl">
                     <DialogHeader>
                       <DialogTitle className="dark:text-white">Create Work Detail</DialogTitle>
                     </DialogHeader>
@@ -815,13 +878,19 @@ const FacultyDashboard = () => {
                         </Select>
                       </div>
                       <div>
-                        <Label className="dark:text-gray-300">Document URL</Label>
-                        <Input
-                          value={workDetailForm.document_url}
-                          onChange={(e) => setWorkDetailForm({...workDetailForm, document_url: e.target.value})}
-                          className="dark:bg-gray-700 dark:text-white"
-                          placeholder="Optional"
-                        />
+                        <Label className="dark:text-gray-300">Upload Document/Photo (Optional)</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="file"
+                            accept="image/*,.pdf,.doc,.docx,.txt"
+                            onChange={(e) => setWorkDetailForm({...workDetailForm, uploaded_file: e.target.files?.[0] || null})}
+                            className="dark:bg-gray-700 dark:text-white"
+                          />
+                          <Upload className="h-4 w-4 text-gray-400" />
+                        </div>
+                        {workDetailForm.uploaded_file && (
+                          <p className="text-sm text-green-600 mt-1">File selected: {workDetailForm.uploaded_file.name}</p>
+                        </p>
                       </div>
                       <div>
                         <Label className="dark:text-gray-300">Description</Label>
@@ -829,6 +898,15 @@ const FacultyDashboard = () => {
                           value={workDetailForm.description}
                           onChange={(e) => setWorkDetailForm({...workDetailForm, description: e.target.value})}
                           className="dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <Label className="dark:text-gray-300">Remarks</Label>
+                        <Textarea
+                          value={workDetailForm.remarks}
+                          onChange={(e) => setWorkDetailForm({...workDetailForm, remarks: e.target.value})}
+                          className="dark:bg-gray-700 dark:text-white"
+                          placeholder="Optional"
                         />
                       </div>
                       <div>
@@ -880,9 +958,10 @@ const FacultyDashboard = () => {
                           href={detail.document_url} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="text-blue-500 hover:text-blue-700 text-sm"
+                          className="text-blue-500 hover:text-blue-700 text-sm inline-flex items-center gap-1"
                         >
-                          View Document
+                          <FileText className="h-3 w-3" />
+                          View Uploaded File
                         </a>
                       )}
                     </CardContent>

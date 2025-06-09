@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { LogOut, Users, BookOpen, Calendar, Moon, Sun } from 'lucide-react';
+import { LogOut, Users, BookOpen, Calendar, Moon, Sun, FileText, ClipboardList } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import {
   Table,
@@ -51,17 +51,16 @@ const AdminDashboard = () => {
       return data || [];
     },
     enabled: !!user,
-    refetchInterval: 5000, // Real-time updates every 5 seconds
+    refetchInterval: 5000,
   });
 
   const { data: allClassRecords } = useQuery({
     queryKey: ['all-class-records'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('class_sessions')
+        .from('class_records')
         .select(`
           *,
-          courses (name, code),
           profiles (full_name)
         `)
         .order('created_at', { ascending: false });
@@ -70,26 +69,46 @@ const AdminDashboard = () => {
       return data || [];
     },
     enabled: !!user,
-    refetchInterval: 3000, // Real-time updates every 3 seconds
+    refetchInterval: 3000,
+  });
+
+  const { data: allWorkDetails } = useQuery({
+    queryKey: ['all-work-details'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('work_details')
+        .select(`
+          *,
+          profiles (full_name)
+        `)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user,
+    refetchInterval: 3000,
   });
 
   const { data: stats } = useQuery({
     queryKey: ['admin-stats'],
     queryFn: async () => {
-      const [facultyResult, coursesResult, sessionsResult] = await Promise.all([
+      const [facultyResult, coursesResult, classRecordsResult, workDetailsResult] = await Promise.all([
         supabase.from('profiles').select('id', { count: 'exact' }).eq('role', 'faculty'),
         supabase.from('courses').select('id', { count: 'exact' }),
-        supabase.from('class_sessions').select('id', { count: 'exact' }),
+        supabase.from('class_records').select('id', { count: 'exact' }),
+        supabase.from('work_details').select('id', { count: 'exact' }),
       ]);
 
       return {
         faculty: facultyResult.count || 0,
         courses: coursesResult.count || 0,
-        sessions: sessionsResult.count || 0,
+        classRecords: classRecordsResult.count || 0,
+        workDetails: workDetailsResult.count || 0,
       };
     },
     enabled: !!user,
-    refetchInterval: 10000, // Real-time updates every 10 seconds
+    refetchInterval: 10000,
   });
 
   if (!user) {
@@ -142,7 +161,7 @@ const AdminDashboard = () => {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card className="dark:bg-gray-800">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium dark:text-white">Total Faculty</CardTitle>
@@ -167,11 +186,22 @@ const AdminDashboard = () => {
           
           <Card className="dark:bg-gray-800">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium dark:text-white">Class Sessions</CardTitle>
-              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium dark:text-white">Class Records</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold dark:text-white">{stats?.sessions || 0}</div>
+              <div className="text-2xl font-bold dark:text-white">{stats?.classRecords || 0}</div>
+              <p className="text-xs text-muted-foreground">Live updates</p>
+            </CardContent>
+          </Card>
+
+          <Card className="dark:bg-gray-800">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium dark:text-white">Work Details</CardTitle>
+              <ClipboardList className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold dark:text-white">{stats?.workDetails || 0}</div>
               <p className="text-xs text-muted-foreground">Live updates</p>
             </CardContent>
           </Card>
@@ -214,9 +244,9 @@ const AdminDashboard = () => {
         </Card>
 
         {/* Class Records Management */}
-        <Card className="dark:bg-gray-800">
+        <Card className="mb-8 dark:bg-gray-800">
           <CardHeader>
-            <CardTitle className="dark:text-white">All Class Records</CardTitle>
+            <CardTitle className="dark:text-white">Faculty Class Records</CardTitle>
             <CardDescription className="dark:text-gray-300">
               Real-time view of all class records submitted by faculty
             </CardDescription>
@@ -226,23 +256,85 @@ const AdminDashboard = () => {
               <TableHeader>
                 <TableRow className="dark:border-gray-700">
                   <TableHead className="dark:text-gray-300">Faculty</TableHead>
-                  <TableHead className="dark:text-gray-300">Course</TableHead>
+                  <TableHead className="dark:text-gray-300">Topic Covered</TableHead>
                   <TableHead className="dark:text-gray-300">Date</TableHead>
-                  <TableHead className="dark:text-gray-300">Time</TableHead>
-                  <TableHead className="dark:text-gray-300">Topic</TableHead>
-                  <TableHead className="dark:text-gray-300">Status</TableHead>
+                  <TableHead className="dark:text-gray-300">Present/Total</TableHead>
+                  <TableHead className="dark:text-gray-300">Description</TableHead>
+                  <TableHead className="dark:text-gray-300">Document</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {allClassRecords?.map((record) => (
                   <TableRow key={record.id} className="dark:border-gray-700">
                     <TableCell className="font-medium dark:text-white">{record.profiles?.full_name}</TableCell>
-                    <TableCell className="dark:text-gray-300">{record.courses?.name || record.courses?.code}</TableCell>
-                    <TableCell className="dark:text-gray-300">{record.session_date}</TableCell>
-                    <TableCell className="dark:text-gray-300">{record.start_time}</TableCell>
-                    <TableCell className="max-w-xs truncate dark:text-gray-300">{record.topic}</TableCell>
+                    <TableCell className="dark:text-gray-300">{record.topic_covered}</TableCell>
+                    <TableCell className="dark:text-gray-300">{new Date(record.session_date).toLocaleDateString()}</TableCell>
+                    <TableCell className="dark:text-gray-300">{record.students_present}/{record.total_students}</TableCell>
+                    <TableCell className="max-w-xs truncate dark:text-gray-300">{record.description || 'N/A'}</TableCell>
                     <TableCell>
-                      <Badge variant="default">Completed</Badge>
+                      {record.document_url ? (
+                        <a 
+                          href={record.document_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:text-blue-700 text-sm"
+                        >
+                          View File
+                        </a>
+                      ) : (
+                        <span className="text-gray-400 text-sm">No file</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        {/* Work Details Management */}
+        <Card className="dark:bg-gray-800">
+          <CardHeader>
+            <CardTitle className="dark:text-white">Faculty Work Details</CardTitle>
+            <CardDescription className="dark:text-gray-300">
+              Real-time view of all work details submitted by faculty
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow className="dark:border-gray-700">
+                  <TableHead className="dark:text-gray-300">Faculty</TableHead>
+                  <TableHead className="dark:text-gray-300">Work Type</TableHead>
+                  <TableHead className="dark:text-gray-300">Duration</TableHead>
+                  <TableHead className="dark:text-gray-300">Date</TableHead>
+                  <TableHead className="dark:text-gray-300">Slot</TableHead>
+                  <TableHead className="dark:text-gray-300">Description</TableHead>
+                  <TableHead className="dark:text-gray-300">Document</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {allWorkDetails?.map((detail) => (
+                  <TableRow key={detail.id} className="dark:border-gray-700">
+                    <TableCell className="font-medium dark:text-white">{detail.profiles?.full_name}</TableCell>
+                    <TableCell className="dark:text-gray-300">{detail.work_type}</TableCell>
+                    <TableCell className="dark:text-gray-300">{detail.duration}</TableCell>
+                    <TableCell className="dark:text-gray-300">{new Date(detail.session_date).toLocaleDateString()}</TableCell>
+                    <TableCell className="dark:text-gray-300 capitalize">{detail.slot_type}</TableCell>
+                    <TableCell className="max-w-xs truncate dark:text-gray-300">{detail.description}</TableCell>
+                    <TableCell>
+                      {detail.document_url ? (
+                        <a 
+                          href={detail.document_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:text-blue-700 text-sm"
+                        >
+                          View File
+                        </a>
+                      ) : (
+                        <span className="text-gray-400 text-sm">No file</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
